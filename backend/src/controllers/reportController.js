@@ -577,7 +577,7 @@ function setCell(ws, address, value, style = {}) {
 
 function buildReconciliationWorkbook(detail, company) {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "YT Dashboard";
+  workbook.creator = "ANS Network";
   workbook.created = new Date();
   const ws = workbook.addWorksheet((detail.partner_name || detail.group_name || "Invoice").slice(0, 31), {
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
@@ -736,13 +736,19 @@ async function sendPdfExport(res, detail, company, options = {}) {
   const lightGreen = "#82c94e";
   const dark = "#2c2f35";
   const gray = "#747b86";
+  const logoPath = path.resolve(__dirname, "../../templates/ans-logo.png");
   const pageW = doc.page.width;
   const pageH = doc.page.height;
   const sideW = 164;
   const mainX = sideW + 48;
 
   doc.rect(0, 0, sideW, pageH).fill(green);
-  doc.fillColor("white").font(boldPdf).fontSize(28).text("YOUR\nLOGO", 30, 42, { lineGap: 2 });
+  if (fs.existsSync(logoPath)) {
+    doc.roundedRect(24, 36, 116, 72, 10).fill("white");
+    doc.image(logoPath, 34, 46, { fit: [96, 52], align: "center", valign: "center" });
+  } else {
+    doc.fillColor("white").font(boldPdf).fontSize(22).text("ANS\nNetwork", 30, 42, { lineGap: 2 });
+  }
   doc.fontSize(10).text(`Invoice# ${detail.month || ""}-${detail.id}`, 28, 170);
   doc.text(`Invoice Date: ${new Date().toLocaleDateString("en-GB")}`, 28, 190);
   doc.text(`Account: ${detail.account_number || "-"}`, 28, 210);

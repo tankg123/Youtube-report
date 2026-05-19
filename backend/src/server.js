@@ -41,7 +41,7 @@ app.use(morgan("dev"));
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "YouTube Channel Dashboard API is running"
+    message: "ANS Network API is running"
   });
 });
 
