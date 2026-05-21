@@ -6,10 +6,14 @@ import {
   Building2,
   ChevronDown,
   CircleDollarSign,
+  Disc3,
+  FileAudio,
   FileSpreadsheet,
   Network,
+  PackageSearch,
   Percent,
   Settings,
+  Tags,
   UserRound,
   Users,
   UsersRound,
@@ -24,7 +28,7 @@ const logoColors = ["#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#089
 
 export default function Sidebar() {
   const location = useLocation();
-  const { canViewReports, canViewChannelManagement, canViewPartner, canViewAccount, canViewSettings } = useAuth();
+  const { canViewReports, canViewChannelManagement, canViewContentId, canViewPartner, canViewAccount, canViewSettings, canViewPartnerGroups } = useAuth();
   const { t } = useI18n();
   const { theme } = useTheme();
   const { settings } = useSystemSettings();
@@ -33,9 +37,11 @@ export default function Sidebar() {
   const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
-  const settingsPaths = ["/settings/system"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/products", "/content-id/labels", "/content-id/artists"];
+  const settingsPaths = ["/settings/system", "/settings/content-id"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
+  const [contentIdOpen, setContentIdOpen] = useState(contentIdPaths.includes(location.pathname));
   const [settingsOpen, setSettingsOpen] = useState(settingsPaths.includes(location.pathname));
 
   const channelMenus = [
@@ -60,17 +66,18 @@ export default function Sidebar() {
   ];
 
   const settingsMenus = [
-    { name: t("systemSettings"), path: "/settings/system", icon: Settings }
+    { name: t("systemSettings"), path: "/settings/system", icon: Settings },
+    { name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }
   ];
 
   return (
     <aside
       className={[
-        "w-[260px] h-screen sticky top-0 p-5 hidden lg:flex flex-col overflow-hidden border-r",
+        "w-[260px] h-screen sticky top-0 hidden lg:flex flex-col overflow-hidden border-r",
         isDark ? "bg-[#0f172a] text-white border-slate-800" : "bg-white text-slate-950 border-slate-200"
       ].join(" ")}
     >
-      <div className="mb-8 text-center">
+      <div className="px-5 pt-5 pb-4 text-center shrink-0">
         <div
           className={[
             "mx-auto w-28 h-28 rounded-full flex items-center justify-center shadow-lg shadow-slate-950/25 overflow-hidden ring-4",
@@ -89,8 +96,13 @@ export default function Sidebar() {
         <p className={["mt-1 text-sm font-bold", isDark ? "text-slate-400" : "text-slate-500"].join(" ")}>{settings.brand_subtitle || t("appSubtitle")}</p>
       </div>
 
-      <nav className="space-y-2 flex-1">
-        {(canViewReports || canViewChannelManagement) && (
+      <nav
+        className={[
+          "mx-3 mb-3 px-2 py-2 space-y-2 flex-1 overflow-y-auto rounded-2xl sidebar-scroll",
+          isDark ? "bg-slate-950/20" : "bg-slate-50/50"
+        ].join(" ")}
+      >
+        {(canViewReports || canViewChannelManagement || canViewContentId) && (
           <>
           {canViewChannelManagement && (
           <div>
@@ -189,6 +201,60 @@ export default function Sidebar() {
             )}
           </div>
           )}
+
+          {canViewContentId && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setContentIdOpen((open) => !open)}
+              className={[
+                "w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
+                contentIdPaths.includes(location.pathname)
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
+                  : isDark
+                    ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+              ].join(" ")}
+            >
+              <Disc3 size={20} />
+              <span className="font-medium flex-1 text-left">Content ID</span>
+              <ChevronDown size={17} className={contentIdOpen ? "rotate-180 transition" : "transition"} />
+            </button>
+
+            {contentIdOpen && (
+              <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
+                {[
+                  { name: "Creator Soundrecording & Art", path: "/content-id/creator", icon: FileAudio },
+                  { name: "Product Manager", path: "/content-id/products", icon: PackageSearch },
+                  { name: "Label", path: "/content-id/labels", icon: Tags },
+                  { name: "Artist", path: "/content-id/artists", icon: UserRound }
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const active = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={[
+                        "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all",
+                        active
+                          ? isDark
+                            ? "bg-blue-500/20 text-white"
+                            : "bg-blue-50 text-blue-700"
+                          : isDark
+                            ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                      ].join(" ")}
+                    >
+                      <Icon size={16} />
+                      <span className="font-medium">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          )}
           </>
         )}
 
@@ -215,56 +281,73 @@ export default function Sidebar() {
           );
         })}
 
-        {canViewSettings && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setSettingsOpen((open) => !open)}
-              className={[
-                "w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
-                settingsPaths.includes(location.pathname)
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
-                  : isDark
-                    ? "text-slate-300 hover:bg-slate-800 hover:text-white"
-                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-              ].join(" ")}
-            >
-              <Settings size={20} />
-              <span className="font-medium flex-1 text-left">{t("settings")}</span>
-              <ChevronDown size={17} className={settingsOpen ? "rotate-180 transition" : "transition"} />
-            </button>
-
-            {settingsOpen && (
-              <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
-                {settingsMenus.map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname === item.path;
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={[
-                        "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all",
-                        active
-                          ? isDark
-                            ? "bg-blue-500/20 text-white"
-                            : "bg-blue-50 text-blue-700"
-                          : isDark
-                            ? "text-slate-400 hover:bg-slate-800 hover:text-white"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                      ].join(" ")}
-                    >
-                      <Icon size={16} />
-                      <span className="font-medium">{item.name}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+        {canViewPartnerGroups && !canViewReports && (
+          <Link
+            to="/groups"
+            className={[
+              "flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
+              location.pathname === "/groups"
+                ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
+                : isDark
+                  ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+            ].join(" ")}
+          >
+            <UsersRound size={20} />
+            <span className="font-medium">{t("group")}</span>
+          </Link>
         )}
+
       </nav>
 
+      {canViewSettings && (
+        <div className={["shrink-0 border-t p-3", isDark ? "border-slate-800" : "border-slate-200"].join(" ")}>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((open) => !open)}
+            className={[
+              "w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
+              settingsPaths.includes(location.pathname)
+                ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
+                : isDark
+                  ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+            ].join(" ")}
+          >
+            <Settings size={20} />
+            <span className="font-medium flex-1 text-left">{t("settings")}</span>
+            <ChevronDown size={17} className={settingsOpen ? "rotate-180 transition" : "transition"} />
+          </button>
+
+          {settingsOpen && (
+            <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
+              {settingsMenus.map((item) => {
+                const Icon = item.icon;
+                const active = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={[
+                      "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all",
+                      active
+                        ? isDark
+                          ? "bg-blue-500/20 text-white"
+                          : "bg-blue-50 text-blue-700"
+                        : isDark
+                          ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                    ].join(" ")}
+                  >
+                    <Icon size={16} />
+                    <span className="font-medium">{item.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </aside>
   );
 }

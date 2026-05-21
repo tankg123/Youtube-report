@@ -18,6 +18,7 @@ export default function AccountPage() {
   const { user, logout, isAdmin } = useAuth();
 
   const [users, setUsers] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -27,9 +28,13 @@ export default function AccountPage() {
     try {
       setLoadingUsers(true);
 
-      const res = await api.get("/auth/users");
+      const [usersRes, groupsRes] = await Promise.all([
+        api.get("/auth/users"),
+        api.get("/reports/groups")
+      ]);
 
-      setUsers(res.data.data || []);
+      setUsers(usersRes.data.data || []);
+      setGroups(groupsRes.data.data || []);
     } catch (error) {
       setMessage(
         error.response?.data?.message ||
@@ -69,6 +74,17 @@ export default function AccountPage() {
         error.response?.data?.message ||
           "Lỗi cập nhật trạng thái user"
       );
+    }
+  }
+
+  async function updatePartnerGroups(id, selectedOptions) {
+    try {
+      const groupIds = [...selectedOptions].map((option) => Number(option.value));
+      await api.put(`/auth/users/${id}/groups`, { group_ids: groupIds });
+      setMessage("Đã cập nhật group cho Partner");
+      fetchUsers();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Lỗi cập nhật group cho Partner");
     }
   }
 
@@ -199,7 +215,7 @@ export default function AccountPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px]">
+            <table className="w-full min-w-[1120px]">
               <thead>
                 <tr className="bg-slate-50 text-left text-sm text-slate-500">
                   <th className="p-4">ID</th>
@@ -207,6 +223,7 @@ export default function AccountPage() {
                   <th className="p-4">Email</th>
                   <th className="p-4">Role</th>
                   <th className="p-4">Status</th>
+                  <th className="p-4">Partner Groups</th>
                   <th className="p-4">Created</th>
                   <th className="p-4 text-right">Action</th>
                 </tr>
@@ -240,6 +257,7 @@ export default function AccountPage() {
                         <option value="admin">admin</option>
                         <option value="Report Manager">Report Manager</option>
                         <option value="Channel Management">Channel Management</option>
+                        <option value="Partner">Partner</option>
                         <option value="user">user</option>
                       </select>
                     </td>
@@ -255,6 +273,28 @@ export default function AccountPage() {
                       >
                         {item.status}
                       </span>
+                    </td>
+
+                    <td className="p-4 min-w-[280px]">
+                      {String(item.role || "").toLowerCase() === "partner" ? (
+                        <div>
+                          <select
+                            multiple
+                            value={(item.assigned_groups || []).map((group) => String(group.id))}
+                            onChange={(event) => updatePartnerGroups(item.id, event.target.selectedOptions)}
+                            className="w-full min-h-[92px] bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold"
+                          >
+                            {groups.map((group) => (
+                              <option key={group.id} value={group.id}>
+                                {group.group_name} - {group.partner_name}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-slate-400">Hold Ctrl to select multiple groups.</p>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
                     </td>
 
                     <td className="p-4 text-slate-500">
@@ -298,7 +338,7 @@ export default function AccountPage() {
                 {users.length === 0 && (
                   <tr>
                     <td
-                      colSpan="7"
+                      colSpan="8"
                       className="p-8 text-center text-slate-500"
                     >
                       Chưa có user nào.

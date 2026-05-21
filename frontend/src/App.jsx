@@ -7,7 +7,7 @@ import {
   useLocation,
   Navigate
 } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, FileSpreadsheet, Network, Percent, Settings, Users, UsersRound, Video, UserRound, Loader2 } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, FileAudio, FileSpreadsheet, Network, PackageSearch, Percent, Settings, Tags, Users, UsersRound, Video, UserRound, Loader2 } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -26,6 +26,10 @@ import NetworkPage from "./pages/NetworkPage";
 import ExchangeRatePage from "./pages/ExchangeRatePage";
 import CompanyPage from "./pages/CompanyPage";
 import SettingsPage from "./pages/SettingsPage";
+import ContentIdCreatorPage from "./pages/ContentIdCreatorPage";
+import ContentIdProductsPage from "./pages/ContentIdProductsPage";
+import ContentIdSettingsPage from "./pages/ContentIdSettingsPage";
+import ContentIdCatalogPage from "./pages/ContentIdCatalogPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { I18nProvider, useI18n } from "./context/I18nContext";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -47,13 +51,15 @@ function LockedPage() {
 
 function MobileNav() {
   const location = useLocation();
-  const { canViewReports, canViewChannelManagement, canViewPartner, canViewAccount, canViewSettings } = useAuth();
+  const { canViewReports, canViewChannelManagement, canViewContentId, canViewPartner, canViewAccount, canViewSettings, canViewPartnerGroups } = useAuth();
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
-  const settingsPaths = ["/settings/system"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/products", "/content-id/labels", "/content-id/artists"];
+  const settingsPaths = ["/settings/system", "/settings/content-id"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
+  const [contentIdOpen, setContentIdOpen] = useState(contentIdPaths.includes(location.pathname));
 
   const channelMenus = [
     { name: "Channel Management", path: "/channel-management", icon: Video },
@@ -119,6 +125,11 @@ function MobileNav() {
       name: t("systemSettings"),
       path: "/settings/system",
       icon: Settings
+    },
+    {
+      name: "Content ID Setting",
+      path: "/settings/content-id",
+      icon: Disc3
     }
   ].filter(() => canViewSettings);
 
@@ -134,7 +145,7 @@ function MobileNav() {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {(canViewChannelManagement || canViewReports) && (
+        {(canViewChannelManagement || canViewReports || canViewContentId) && (
           <div className="col-span-2">
             {canViewChannelManagement && (
             <>
@@ -210,6 +221,48 @@ function MobileNav() {
             )}
             </>
             )}
+            {canViewContentId && (
+            <>
+            <button
+              type="button"
+              onClick={() => setContentIdOpen((open) => !open)}
+              className={[
+                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold mt-2",
+                contentIdOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+              ].join(" ")}
+            >
+              <Disc3 size={17} />
+              Content ID
+              <ChevronDown size={16} className={contentIdOpen ? "rotate-180 transition" : "transition"} />
+            </button>
+            {contentIdOpen && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {[
+                  { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio },
+                  { name: "Product Manager", path: "/content-id/products", icon: PackageSearch },
+                  { name: "Label", path: "/content-id/labels", icon: Tags },
+                  { name: "Artist", path: "/content-id/artists", icon: UserRound }
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const active = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={[
+                        "flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
+                        active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"
+                      ].join(" ")}
+                    >
+                      <Icon size={16} />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+            </>
+            )}
           </div>
         )}
         {menus.map((item) => {
@@ -232,12 +285,24 @@ function MobileNav() {
             </Link>
           );
         })}
+        {canViewPartnerGroups && !canViewReports && (
+          <Link
+            to="/groups"
+            className={[
+              "col-span-2 flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
+              location.pathname === "/groups" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+            ].join(" ")}
+          >
+            <UsersRound size={17} />
+            {t("group")}
+          </Link>
+        )}
         {canViewSettings && (
           <div className="col-span-2">
             <div className="grid grid-cols-1 gap-2">
               {settingsMenus.map((item) => {
                 const Icon = item.icon;
-                const active = settingsPaths.includes(location.pathname);
+                const active = location.pathname === item.path;
                 return (
                   <Link
                     key={item.path}
@@ -261,7 +326,7 @@ function MobileNav() {
 }
 
 function PrivateLayout() {
-  const { user, authLoading, canViewReports, canViewChannelManagement, canViewPartner, canViewAccount, canViewSettings } = useAuth();
+  const { user, authLoading, canViewReports, canViewChannelManagement, canViewContentId, canViewPartner, canViewAccount, canViewSettings, canViewPartnerGroups } = useAuth();
 
   if (authLoading) {
     return (
@@ -275,7 +340,7 @@ function PrivateLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  const defaultPath = canViewChannelManagement ? "/channel-management" : canViewReports ? "/report-dashboard" : canViewPartner ? "/partners" : canViewAccount ? "/account" : canViewSettings ? "/settings/system" : "/locked";
+  const defaultPath = canViewChannelManagement ? "/channel-management" : canViewReports ? "/report-dashboard" : canViewContentId ? "/content-id/creator" : canViewPartnerGroups ? "/groups" : canViewPartner ? "/partners" : canViewAccount ? "/account" : canViewSettings ? "/settings/system" : "/locked";
 
   return (
     <div className="min-h-screen flex bg-[#f3f6fb]">
@@ -395,16 +460,34 @@ function PrivateLayout() {
           <Route
             path="/groups"
             element={
-              canViewReports ? (
+              canViewPartnerGroups ? (
                 <GroupChannelPage />
               ) : (
                 <Navigate to={defaultPath} replace />
               )
             }
           />
+          <Route path="/content-id" element={<Navigate to="/content-id/creator" replace />} />
+          <Route
+            path="/content-id/creator"
+            element={canViewContentId ? <ContentIdCreatorPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
+            path="/content-id/products"
+            element={canViewContentId ? <ContentIdProductsPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
+            path="/content-id/labels"
+            element={canViewContentId ? <ContentIdCatalogPage type="labels" /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
+            path="/content-id/artists"
+            element={canViewContentId ? <ContentIdCatalogPage type="artists" /> : <Navigate to={defaultPath} replace />}
+          />
           <Route path="/account" element={canViewAccount ? <AccountPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
           <Route path="/settings/system" element={canViewSettings ? <SettingsPage /> : <Navigate to={defaultPath} replace />} />
+          <Route path="/settings/content-id" element={canViewSettings ? <ContentIdSettingsPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/locked" element={<LockedPage />} />
           <Route path="*" element={<Navigate to={defaultPath} replace />} />
         </Routes>

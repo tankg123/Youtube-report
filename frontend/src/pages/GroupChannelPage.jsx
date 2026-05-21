@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ArrowUpDown, Calendar, Check, Copy, Download, Edit3, Loader2, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
 import api from "../api/api";
+import { useAuth } from "../context/AuthContext";
 
 const emptyGroup = {
   partner_id: "",
@@ -655,6 +657,8 @@ function GroupForm({ partners, value, onChange }) {
 }
 
 export default function GroupChannelPage() {
+  const { canViewReports } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState(currentMonth());
   const [partners, setPartners] = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -675,6 +679,8 @@ export default function GroupChannelPage() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [channelSort, setChannelSort] = useState({ key: "channel", direction: "asc" });
+  const queryGroupId = searchParams.get("group_id");
+  const queryMonth = searchParams.get("month");
 
   function toggleChannelSort(key) {
     setChannelSort((current) => ({
@@ -707,18 +713,21 @@ export default function GroupChannelPage() {
   async function fetchAll() {
     try {
       setLoading(true);
-      const [partnersRes, groupsRes, companiesRes] = await Promise.all([
-        api.get("/reports/partners"),
-        api.get("/reports/groups", { params: { month } }),
-        api.get("/reports/companies")
-      ]);
+      const requests = canViewReports
+        ? [api.get("/reports/partners"), api.get("/reports/groups", { params: { month } }), api.get("/reports/companies")]
+        : [Promise.resolve({ data: { data: [] } }), api.get("/reports/groups", { params: { month } }), Promise.resolve({ data: { data: [] } })];
+      const [partnersRes, groupsRes, companiesRes] = await Promise.all(requests);
       setPartners(partnersRes.data.data || []);
       const nextCompanies = companiesRes.data.data || [];
       setCompanies(nextCompanies);
       if (!selectedCompanyId && nextCompanies[0]) setSelectedCompanyId(String(nextCompanies[0].id));
       const nextGroups = groupsRes.data.data || [];
       setGroups(nextGroups);
-      if (!selectedId && nextGroups[0]) setSelectedId(nextGroups[0].id);
+      if (queryGroupId && nextGroups.some((group) => String(group.id) === String(queryGroupId))) {
+        setSelectedId(queryGroupId);
+      } else if (!selectedId && nextGroups[0]) {
+        setSelectedId(nextGroups[0].id);
+      }
     } catch (error) {
       setMessage(error.response?.data?.message || "Lỗi tải group");
     } finally {
@@ -931,6 +940,16 @@ export default function GroupChannelPage() {
   }
 
   useEffect(() => {
+    if (queryMonth && /^\d{4}-\d{2}$/.test(queryMonth) && queryMonth !== month) {
+      setMonth(queryMonth);
+    }
+    if (queryGroupId && String(queryGroupId) !== String(selectedId || "")) {
+      setSelectedId(queryGroupId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryGroupId, queryMonth]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       fetchAll();
     }, 0);
@@ -956,10 +975,12 @@ export default function GroupChannelPage() {
           <p className="text-slate-500 text-sm mt-1">Tạo group, chọn partner, cấu hình tier và tính revenue share theo tháng.</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2">
-            <Plus size={18} />
-            Tạo group
-          </button>
+          {canViewReports && (
+            <button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2">
+              <Plus size={18} />
+              Tạo group
+            </button>
+          )}
           <div className="relative">
             <button
               type="button"
@@ -1002,7 +1023,10 @@ export default function GroupChannelPage() {
               {groups.map((group) => (
                 <button
                   key={group.id}
-                  onClick={() => setSelectedId(group.id)}
+                  onClick={() => {
+                    setSelectedId(group.id);
+                    setSearchParams({ group_id: String(group.id), month });
+                  }}
                   className={[
                     "w-full text-left rounded-2xl p-4 border transition",
                     Number(selectedId) === Number(group.id) ? "border-emerald-300 bg-emerald-50" : "border-slate-100 hover:bg-slate-50"
@@ -1032,11 +1056,11 @@ export default function GroupChannelPage() {
                     <p className="text-slate-500">{detail.partner_name}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setAddModal(true)} className="bg-emerald-600 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Plus size={17} /> Add channel</button>
+                    {canViewReports && <button onClick={() => setAddModal(true)} className="bg-emerald-600 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Plus size={17} /> Add channel</button>}
                     <button onClick={() => fetchDetail()} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><RefreshCw size={17} /> Refresh</button>
                     <button onClick={() => setExportModalOpen(true)} className="bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Download size={17} /> Export</button>
-                    <button onClick={openEdit} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Edit3 size={17} /> Edit</button>
-                    <button onClick={deleteGroup} className="bg-red-50 border border-red-100 text-red-600 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Trash2 size={17} /> Xóa group</button>
+                    {canViewReports && <button onClick={openEdit} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Edit3 size={17} /> Edit</button>}
+                    {canViewReports && <button onClick={deleteGroup} className="bg-red-50 border border-red-100 text-red-600 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Trash2 size={17} /> Xóa group</button>}
                   </div>
                 </div>
 
@@ -1129,7 +1153,7 @@ export default function GroupChannelPage() {
                           <th className="text-right px-5 py-3">
                             <SortButton label={`Paid (${detail.currency})`} active={channelSort.key === "paid"} direction={channelSort.direction} onClick={() => toggleChannelSort("paid")} align="right" />
                           </th>
-                          <th className="text-right px-5 py-3">Action</th>
+                          {canViewReports && <th className="text-right px-5 py-3">Action</th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -1166,12 +1190,14 @@ export default function GroupChannelPage() {
                             <td className="px-5 py-4 text-right font-black">{usd(channel.revenue_usd ?? channel.revenue)}</td>
                             <td className="px-5 py-4 text-right font-black text-slate-900">{usd(channel.share_amount)}</td>
                             <td className="px-5 py-4 text-right font-black text-emerald-700">{converted(channel.paid ?? channel.share_amount_converted ?? channel.share_amount, detail.currency)}</td>
-                            <td className="px-5 py-4 text-right">
-                              <button onClick={() => removeChannel(channel.group_channel_id)} className="px-3 py-2 rounded-xl bg-red-50 text-red-600 font-bold inline-flex items-center gap-2">
-                                <Trash2 size={15} />
-                                Xóa
-                              </button>
-                            </td>
+                            {canViewReports && (
+                              <td className="px-5 py-4 text-right">
+                                <button onClick={() => removeChannel(channel.group_channel_id)} className="px-3 py-2 rounded-xl bg-red-50 text-red-600 font-bold inline-flex items-center gap-2">
+                                  <Trash2 size={15} />
+                                  Xóa
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -1256,6 +1282,7 @@ export default function GroupChannelPage() {
               <button type="button" onClick={() => setExportModalOpen(false)} className="w-10 h-10 rounded-xl border border-slate-300 flex items-center justify-center"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
+              {canViewReports && (
               <label>
                 <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Company</span>
                 <select
@@ -1270,6 +1297,7 @@ export default function GroupChannelPage() {
                   ))}
                 </select>
               </label>
+              )}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                 <p><b className="text-slate-900">Partner:</b> {detail.partner_name}</p>
                 <p><b className="text-slate-900">Month:</b> {monthLabel(detail.month)}</p>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Activity, AlertTriangle, DollarSign, Loader2, TrendingUp, Users, Video } from "lucide-react";
 import api from "../api/api";
 
@@ -51,6 +52,7 @@ function StatCard({ title, value, sub, icon: Icon, tone = "blue" }) {
 }
 
 export default function ReportDashboardPage() {
+  const navigate = useNavigate();
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +80,15 @@ export default function ReportDashboardPage() {
   const monthSummary = data?.month_summary || {};
   const counts = data?.counts || {};
   const profitTone = useMemo(() => Number(monthSummary.total_profit_usd || 0) >= 0 ? "emerald" : "rose", [monthSummary.total_profit_usd]);
+
+  function openPartnerGroup(partner) {
+    if (!partner?.group_id) return;
+    navigate(`/groups?group_id=${partner.group_id}&month=${month}`);
+  }
+
+  function youtubeChannelUrl(channelId) {
+    return `https://www.youtube.com/channel/${encodeURIComponent(channelId || "")}`;
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-5">
@@ -128,7 +139,13 @@ export default function ReportDashboardPage() {
               </div>
               <div className="divide-y divide-slate-100">
                 {(data?.top_partners || []).length ? data.top_partners.map((partner, index) => (
-                  <div key={`${partner.partner_id}-${index}`} className="px-5 py-4 flex items-center gap-4">
+                  <button
+                    type="button"
+                    key={`${partner.partner_id}-${index}`}
+                    onClick={() => openPartnerGroup(partner)}
+                    className="w-full px-5 py-4 flex items-center gap-4 text-left hover:bg-emerald-50 transition"
+                    title={partner.group_name ? `Open group: ${partner.group_name}` : "Open group detail"}
+                  >
                     <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-black">{index + 1}</div>
                     <div className="min-w-0 flex-1">
                       <p className="font-black text-slate-900 truncate">{partner.partner_name}</p>
@@ -138,7 +155,7 @@ export default function ReportDashboardPage() {
                       <p className="font-black text-slate-950">{money(partner.revenue_usd)}</p>
                       <p className="text-xs font-bold text-emerald-600">Paid {money(partner.paid_usd)}</p>
                     </div>
-                  </div>
+                  </button>
                 )) : <div className="px-5 py-12 text-center text-slate-400 font-bold">No partner revenue for this month.</div>}
               </div>
             </div>
@@ -151,11 +168,19 @@ export default function ReportDashboardPage() {
               <div className="divide-y divide-slate-100">
                 {(data?.top_channels || []).length ? data.top_channels.map((channel, index) => (
                   <div key={`${channel.channel_id}-${index}`} className="px-5 py-4 flex items-center gap-4">
-                    {channel.thumbnail ? (
-                      <img src={channel.thumbnail} alt={channel.title} className="w-11 h-11 rounded-xl object-cover border border-slate-200" />
-                    ) : (
-                      <div className="w-11 h-11 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black">{initials(channel.title)}</div>
-                    )}
+                    <a
+                      href={youtubeChannelUrl(channel.channel_id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open YouTube channel"
+                      className="shrink-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {channel.thumbnail ? (
+                        <img src={channel.thumbnail} alt={channel.title} className="w-11 h-11 rounded-xl object-cover border border-slate-200" />
+                      ) : (
+                        <div className="w-11 h-11 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black">{initials(channel.title)}</div>
+                      )}
+                    </a>
                     <div className="min-w-0 flex-1">
                       <p className="font-black text-slate-900 truncate">{index + 1}. {channel.title}</p>
                       <p className="text-xs font-mono text-slate-400 truncate">{channel.channel_id}</p>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { LockKeyhole, Mail, Loader2 } from "lucide-react";
+import { LockKeyhole, Mail, Loader2, ShieldCheck } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
@@ -12,11 +12,13 @@ export default function LoginPage() {
 
   const [form, setForm] = useState({
     email: "",
-    password: ""
+    password: "",
+    otp: ""
   });
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [requires2fa, setRequires2fa] = useState(false);
 
   function handleChange(e) {
     setForm({
@@ -32,7 +34,17 @@ export default function LoginPage() {
       setLoading(true);
       setMessage("");
 
-      const res = await api.post("/auth/login", form);
+      const res = await api.post("/auth/login", {
+        email: form.email,
+        password: form.password,
+        otp: requires2fa ? form.otp : undefined
+      });
+
+      if (res.data.requires_2fa) {
+        setRequires2fa(true);
+        setMessage("");
+        return;
+      }
 
       saveAuth(res.data.token, res.data.user);
 
@@ -120,12 +132,32 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {requires2fa && (
+              <div>
+                <label className="text-sm font-bold text-slate-700">Google Authenticator code</label>
+
+                <div className="mt-2 flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus-within:border-blue-500">
+                  <ShieldCheck size={20} className="text-slate-400" />
+
+                  <input
+                    name="otp"
+                    value={form.otp}
+                    onChange={handleChange}
+                    placeholder="123456"
+                    inputMode="numeric"
+                    maxLength={6}
+                    className="w-full bg-transparent tracking-[0.35em] font-black"
+                  />
+                </div>
+              </div>
+            )}
+
             <button
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl py-4 font-black flex items-center justify-center gap-2 disabled:opacity-60"
             >
               {loading && <Loader2 size={20} className="animate-spin" />}
-              Sign in
+              {requires2fa ? "Verify and sign in" : "Sign in"}
             </button>
           </form>
 

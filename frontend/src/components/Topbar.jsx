@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Eye, EyeOff, Languages, LockKeyhole, LogOut, Moon, Save, Settings, Sun, UserRound, X } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Languages, LockKeyhole, LogOut, Moon, Save, Settings, ShieldCheck, Sun, UserRound, X } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
@@ -47,9 +47,13 @@ export default function Topbar() {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
+  const [twoFactorMessage, setTwoFactorMessage] = useState("");
+  const [twoFactorSetup, setTwoFactorSetup] = useState(null);
+  const [twoFactorForm, setTwoFactorForm] = useState({ code: "", password: "" });
   const [showPasswords, setShowPasswords] = useState({});
   const avatarColor = useMemo(() => randomColor(), []);
   const [form, setForm] = useState({
@@ -79,6 +83,14 @@ export default function Topbar() {
     setPasswordMessage("");
     setShowPasswords({});
     setPasswordOpen(true);
+    setOpen(false);
+  }
+
+  async function openTwoFactorModal() {
+    setTwoFactorMessage("");
+    setTwoFactorSetup(null);
+    setTwoFactorForm({ code: "", password: "" });
+    setTwoFactorOpen(true);
     setOpen(false);
   }
 
@@ -116,6 +128,49 @@ export default function Topbar() {
       setPasswordOpen(false);
     } catch (error) {
       setPasswordMessage(error.response?.data?.message || "Could not change password");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setupTwoFactor() {
+    try {
+      setSaving(true);
+      setTwoFactorMessage("");
+      const res = await api.post("/auth/2fa/setup");
+      setTwoFactorSetup(res.data);
+    } catch (error) {
+      setTwoFactorMessage(error.response?.data?.message || "Could not setup 2FA");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function enableTwoFactor(event) {
+    event.preventDefault();
+    try {
+      setSaving(true);
+      setTwoFactorMessage("");
+      const res = await api.post("/auth/2fa/enable", { code: twoFactorForm.code });
+      updateSavedUser(res.data.user, res.data.token);
+      setTwoFactorOpen(false);
+    } catch (error) {
+      setTwoFactorMessage(error.response?.data?.message || "Could not enable 2FA");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disableTwoFactor(event) {
+    event.preventDefault();
+    try {
+      setSaving(true);
+      setTwoFactorMessage("");
+      const res = await api.post("/auth/2fa/disable", twoFactorForm);
+      updateSavedUser(res.data.user, res.data.token);
+      setTwoFactorOpen(false);
+    } catch (error) {
+      setTwoFactorMessage(error.response?.data?.message || "Could not disable 2FA");
     } finally {
       setSaving(false);
     }
@@ -194,6 +249,9 @@ export default function Topbar() {
               <button type="button" onClick={openPasswordModal} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
                 <LockKeyhole size={16} /> Change password
               </button>
+              <button type="button" onClick={openTwoFactorModal} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
+                <ShieldCheck size={16} /> Two-factor authentication
+              </button>
               <button type="button" onClick={handleLogout} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-red-600 hover:bg-red-50">
                 <LogOut size={16} /> Logout
               </button>
@@ -264,6 +322,79 @@ export default function Topbar() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {twoFactorOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-slate-950">Two-factor authentication</h2>
+                <p className="text-sm text-slate-500 mt-1">Use Google Authenticator or any TOTP app to protect your login.</p>
+              </div>
+              <button type="button" onClick={() => setTwoFactorOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {twoFactorMessage && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{twoFactorMessage}</div>}
+
+              {Number(user?.two_factor_enabled || 0) === 1 ? (
+                <form onSubmit={disableTwoFactor} className="space-y-4">
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-700 font-bold">
+                    2FA is currently enabled for this account.
+                  </div>
+                  <PasswordInput label="Current password" value={twoFactorForm.password} onChange={(value) => setTwoFactorForm({ ...twoFactorForm, password: value })} shown={showPasswords.twoFactorPassword} onToggle={() => setShowPasswords({ ...showPasswords, twoFactorPassword: !showPasswords.twoFactorPassword })} />
+                  <label className="block">
+                    <span className="font-black text-slate-700 mb-2 block">Authenticator code</span>
+                    <input
+                      value={twoFactorForm.code}
+                      onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })}
+                      inputMode="numeric"
+                      maxLength={6}
+                      className="w-full rounded-2xl border border-slate-300 px-4 py-3 tracking-[0.35em] font-black"
+                      required
+                    />
+                  </label>
+                  <button disabled={saving} className="w-full rounded-2xl bg-red-600 px-5 py-3 font-black text-white disabled:opacity-60">Disable 2FA</button>
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  {!twoFactorSetup ? (
+                    <button onClick={setupTwoFactor} disabled={saving} className="w-full rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-60">
+                      Generate QR code
+                    </button>
+                  ) : (
+                    <form onSubmit={enableTwoFactor} className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-center">
+                          <img src={twoFactorSetup.qr_url} alt="2FA QR code" className="w-56 h-56" />
+                        </div>
+                        <div className="rounded-3xl border border-slate-200 p-4">
+                          <p className="font-black text-slate-950">Scan this QR in Google Authenticator.</p>
+                          <p className="mt-2 text-sm text-slate-500">If the QR image does not load, add this secret manually:</p>
+                          <p className="mt-3 break-all rounded-2xl bg-slate-100 p-3 font-mono text-sm font-black text-slate-700">{twoFactorSetup.secret}</p>
+                        </div>
+                      </div>
+                      <label className="block">
+                        <span className="font-black text-slate-700 mb-2 block">Enter 6-digit code</span>
+                        <input
+                          value={twoFactorForm.code}
+                          onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })}
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="123456"
+                          className="w-full rounded-2xl border border-slate-300 px-4 py-3 tracking-[0.35em] font-black"
+                          required
+                        />
+                      </label>
+                      <button disabled={saving} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white disabled:opacity-60">Enable 2FA</button>
+                    </form>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </>

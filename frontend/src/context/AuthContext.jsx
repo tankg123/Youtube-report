@@ -100,6 +100,7 @@ export function AuthProvider({ children }) {
       const isAdmin = role === "admin" || isSuperAdminRole(role);
       const isReportManager = role === "report manager";
       const isChannelManagement = role === "channel management";
+      const isPartnerRole = role === "partner";
 
       return (
     <AuthContext.Provider
@@ -115,9 +116,12 @@ export function AuthProvider({ children }) {
         isAdmin,
         isReportManager,
         isChannelManagement,
+        isPartnerRole,
         isManager: isReportManager,
         canViewReports: isAdmin || isReportManager,
+        canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,
         canViewChannelManagement: isAdmin || isChannelManagement,
+        canViewContentId: isAdmin || isReportManager || isChannelManagement,
         canViewPartner: isAdmin || isReportManager || isChannelManagement,
         canViewAccount: isAdmin,
         canViewSettings: isAdmin,
