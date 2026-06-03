@@ -337,7 +337,9 @@ function makePayload(detail, company, options = {}) {
       position: safeStr(detail.position)
     },
     exchange_rate: {
-      title: "Exchange month description",
+      title: detail.exchange_rate?.description
+        ? ` ${safeStr(detail.exchange_rate.description)}`
+        : "Exchange month description",
       value: currency === "USD"
         ? ""
         : `1 USD = ${moneyText(detail.exchange_rate?.factor || 0, currency)}`

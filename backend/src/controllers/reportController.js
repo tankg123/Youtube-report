@@ -477,7 +477,12 @@ function groupDetail(groupId, month) {
       factor: conversion.factor,
       missing: conversion.missing,
       usd_to_vnd: conversion.rate?.usd_to_vnd || 0,
-      usd_to_gbp: conversion.rate?.usd_to_gbp || 0
+      usd_to_gbp: conversion.rate?.usd_to_gbp || 0,
+      description: group.currency === "VND"
+        ? conversion.rate?.usd_to_vnd_description || ""
+        : group.currency === "GBP"
+          ? conversion.rate?.usd_to_gbp_description || ""
+          : ""
     },
     channels: channelRows,
     summary: {
@@ -539,6 +544,25 @@ function monthTitle(month = "") {
 
 function safeFileName(value = "export") {
   return String(value || "export").replace(/[\\/:*?"<>|]+/g, "-").trim() || "export";
+}
+
+function safeDownloadName(value = "export") {
+  const fallback = "export";
+  return String(value || fallback)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]+/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160) || fallback;
+}
+
+function setDownloadHeaders(res, contentType, fileName) {
+  const safeName = safeDownloadName(fileName);
+  const encodedName = encodeURIComponent(fileName).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`);
 }
 
 function selectedCompany(companyId) {
@@ -730,8 +754,7 @@ function buildReconciliationWorkbook(detail, company) {
 async function sendExcelExport(res, detail, company) {
   const buffer = await generateGroupReconciliationExcel(detail, company);
   const fileName = `${safeFileName(detail.group_name || "group")}-${detail.month || "report"}.xlsx`;
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  setDownloadHeaders(res, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
   res.send(buffer);
 }
 
@@ -1013,8 +1036,7 @@ async function sendPdfExport(res, detail, company, options = {}) {
     return;
   }
 
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  setDownloadHeaders(res, "application/pdf", fileName);
   res.send(buffer);
 }
 
