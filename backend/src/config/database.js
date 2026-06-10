@@ -215,7 +215,17 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS networks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    network_code TEXT,
     description TEXT,
+    cms_auth_status TEXT NOT NULL DEFAULT 'not_connected',
+    cms_auth_email TEXT,
+    cms_auth_name TEXT,
+    cms_auth_scopes TEXT,
+    cms_access_token TEXT,
+    cms_refresh_token TEXT,
+    cms_token_expiry DATETIME,
+    cms_authed_at DATETIME,
+    cms_auth_error TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -609,6 +619,38 @@ if (!partnerColumns.some((column) => column.name === "contract_file_name")) {
 }
 if (!partnerColumns.some((column) => column.name === "contract_file_data_url")) {
   db.exec("ALTER TABLE partners ADD COLUMN contract_file_data_url TEXT");
+}
+
+const networkColumns = db.prepare("PRAGMA table_info(networks)").all();
+if (!networkColumns.some((column) => column.name === "network_code")) {
+  db.exec("ALTER TABLE networks ADD COLUMN network_code TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_auth_status")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_auth_status TEXT NOT NULL DEFAULT 'not_connected'");
+}
+if (!networkColumns.some((column) => column.name === "cms_auth_email")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_auth_email TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_auth_name")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_auth_name TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_auth_scopes")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_auth_scopes TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_access_token")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_access_token TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_refresh_token")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_refresh_token TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_token_expiry")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_token_expiry DATETIME");
+}
+if (!networkColumns.some((column) => column.name === "cms_authed_at")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_authed_at DATETIME");
+}
+if (!networkColumns.some((column) => column.name === "cms_auth_error")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_auth_error TEXT");
 }
 
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_codes_type_status ON content_id_codes(type, status)");

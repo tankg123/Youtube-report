@@ -8,6 +8,8 @@ const GROUP_READ_ROLES = ["admin", "Report Manager", "Partner"];
 const PARTNER_ROLES = ["admin", "Report Manager", "Channel Management"];
 const NETWORK_READ_ROLES = ["admin", "Report Manager", "Channel Management"];
 
+router.get("/networks/cms-auth/callback", reportController.handleNetworkCmsAuthCallback);
+
 router.use(authMiddleware);
 
 router.post("/manager/import", allowRoles(...REPORT_ROLES), reportController.importManagerReport);
@@ -18,6 +20,8 @@ router.delete("/manager", allowRoles(...REPORT_ROLES), reportController.deleteRe
 router.get("/youtube/quota", allowRoles(...REPORT_ROLES), reportController.getYoutubeQuota);
 
 router.get("/networks", allowRoles(...NETWORK_READ_ROLES), reportController.getNetworks);
+router.get("/networks/:id/cms-auth-url", allowRoles("admin"), reportController.getNetworkCmsAuthUrl);
+router.post("/networks/:id/cms-auth/disconnect", allowRoles("admin"), reportController.disconnectNetworkCmsAuth);
 router.post("/networks", allowRoles(...REPORT_ROLES), reportController.createNetwork);
 router.put("/networks/:id", allowRoles(...REPORT_ROLES), reportController.updateNetwork);
 router.delete("/networks/:id", allowRoles(...REPORT_ROLES), reportController.deleteNetwork);

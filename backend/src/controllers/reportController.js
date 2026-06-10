@@ -7,6 +7,7 @@ const PDFDocument = require("pdfkit");
 const db = require("../config/database");
 const { getChannelFromYoutube, getChannelsFromYoutube, getQuotaStatus } = require("../services/youtubeService");
 const { generateGroupReconciliationExcel } = require("../services/reconciliationTemplateService");
+const cmsAuthService = require("../services/googleCmsAuthService");
 const { normalizedRoles } = require("../middlewares/authMiddleware");
 
 function decodeXml(value = "") {
@@ -1655,9 +1656,26 @@ exports.getPartnerDashboard = (req, res) => {
   }
 };
 
+const NETWORK_PUBLIC_FIELDS = `
+  id, name, network_code, description,
+  cms_auth_status, cms_auth_email, cms_auth_name, cms_auth_scopes,
+  cms_token_expiry, cms_authed_at, cms_auth_error,
+  created_at, updated_at
+`;
+
+function redirectCmsAuth(status, params = {}) {
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  const url = new URL("/networks", frontendUrl);
+  url.searchParams.set("cms_auth", status);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value != null && value !== "") url.searchParams.set(key, String(value));
+  });
+  return url.toString();
+}
+
 exports.getNetworks = (req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM networks ORDER BY updated_at DESC, id DESC").all();
+    const rows = db.prepare(`SELECT ${NETWORK_PUBLIC_FIELDS} FROM networks ORDER BY updated_at DESC, id DESC`).all();
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi lấy network", error: error.message });
@@ -1668,17 +1686,18 @@ exports.createNetwork = (req, res) => {
   try {
     const data = req.body || {};
     const name = String(data.name || "").trim();
+    const networkCode = String(data.network_code || "").trim();
 
     if (!name) {
       return res.status(400).json({ success: false, message: "Vui lòng nhập tên network" });
     }
 
     const result = db.prepare(`
-      INSERT INTO networks (name, description)
-      VALUES (?, ?)
-    `).run(name, data.description || "");
+      INSERT INTO networks (name, network_code, description)
+      VALUES (?, ?, ?)
+    `).run(name, networkCode, data.description || "");
 
-    res.json({ success: true, message: "Đã tạo network", data: db.prepare("SELECT * FROM networks WHERE id = ?").get(result.lastInsertRowid) });
+    res.json({ success: true, message: "Đã tạo network", data: db.prepare(`SELECT ${NETWORK_PUBLIC_FIELDS} FROM networks WHERE id = ?`).get(result.lastInsertRowid) });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi tạo network", error: error.message });
   }
@@ -1688,6 +1707,7 @@ exports.updateNetwork = (req, res) => {
   try {
     const data = req.body || {};
     const name = String(data.name || "").trim();
+    const networkCode = String(data.network_code || "").trim();
 
     if (!name) {
       return res.status(400).json({ success: false, message: "Vui lòng nhập tên network" });
@@ -1695,9 +1715,9 @@ exports.updateNetwork = (req, res) => {
 
     db.prepare(`
       UPDATE networks
-      SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+      SET name = ?, network_code = ?, description = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(name, data.description || "", req.params.id);
+    `).run(name, networkCode, data.description || "", req.params.id);
 
     res.json({ success: true, message: "Đã cập nhật network" });
   } catch (error) {
@@ -1717,6 +1737,116 @@ exports.deleteNetwork = (req, res) => {
     res.json({ success: true, message: "Đã xóa network" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi xóa network", error: error.message });
+  }
+};
+
+exports.getNetworkCmsAuthUrl = (req, res) => {
+  try {
+    const network = db.prepare("SELECT id, name FROM networks WHERE id = ?").get(req.params.id);
+    if (!network) {
+      return res.status(404).json({ success: false, message: "Network not found" });
+    }
+
+    const url = cmsAuthService.buildAuthUrl(network.id);
+    db.prepare(`
+      UPDATE networks
+      SET cms_auth_status = 'pending', cms_auth_error = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(network.id);
+
+    res.json({ success: true, data: { url } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not create Google CMS auth URL", error: error.message });
+  }
+};
+
+exports.handleNetworkCmsAuthCallback = async (req, res) => {
+  let networkId = null;
+
+  try {
+    const state = cmsAuthService.parseState(req.query.state);
+    networkId = state.network_id;
+
+    if (req.query.error) {
+      db.prepare(`
+        UPDATE networks
+        SET cms_auth_status = 'error', cms_auth_error = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(String(req.query.error), networkId);
+      return res.redirect(redirectCmsAuth("error", { network_id: networkId, message: req.query.error }));
+    }
+
+    const code = String(req.query.code || "");
+    if (!code) throw new Error("Missing Google OAuth code");
+
+    const existing = db.prepare("SELECT id, cms_refresh_token FROM networks WHERE id = ?").get(networkId);
+    if (!existing) throw new Error("Network not found");
+
+    const token = await cmsAuthService.exchangeCode(code);
+    const user = token.access_token ? await cmsAuthService.getGoogleUser(token.access_token) : {};
+    const expiresAt = token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString() : null;
+
+    db.prepare(`
+      UPDATE networks
+      SET cms_auth_status = 'connected',
+          cms_auth_email = ?,
+          cms_auth_name = ?,
+          cms_auth_scopes = ?,
+          cms_access_token = ?,
+          cms_refresh_token = ?,
+          cms_token_expiry = ?,
+          cms_authed_at = CURRENT_TIMESTAMP,
+          cms_auth_error = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      user.email || "",
+      user.name || "",
+      token.scope || cmsAuthService.CMS_SCOPES.join(" "),
+      token.access_token || "",
+      token.refresh_token || existing.cms_refresh_token || "",
+      expiresAt,
+      networkId
+    );
+
+    return res.redirect(redirectCmsAuth("success", { network_id: networkId }));
+  } catch (error) {
+    if (networkId) {
+      db.prepare(`
+        UPDATE networks
+        SET cms_auth_status = 'error', cms_auth_error = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(error.message, networkId);
+    }
+    return res.redirect(redirectCmsAuth("error", { network_id: networkId, message: error.message }));
+  }
+};
+
+exports.disconnectNetworkCmsAuth = (req, res) => {
+  try {
+    const network = db.prepare("SELECT id FROM networks WHERE id = ?").get(req.params.id);
+    if (!network) {
+      return res.status(404).json({ success: false, message: "Network not found" });
+    }
+
+    db.prepare(`
+      UPDATE networks
+      SET cms_auth_status = 'not_connected',
+          cms_auth_email = NULL,
+          cms_auth_name = NULL,
+          cms_auth_scopes = NULL,
+          cms_access_token = NULL,
+          cms_refresh_token = NULL,
+          cms_token_expiry = NULL,
+          cms_authed_at = NULL,
+          cms_auth_error = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(req.params.id);
+
+    res.json({ success: true, message: "CMS auth disconnected" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not disconnect CMS auth", error: error.message });
   }
 };
 
