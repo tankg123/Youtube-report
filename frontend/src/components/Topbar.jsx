@@ -89,7 +89,6 @@ export default function Topbar() {
           { name: t("report"), path: "/reports", icon: FileSpreadsheet },
           { name: "Export Multi", path: "/export-multi", icon: FileSpreadsheet },
           { name: "Channel", path: "/channels", icon: Video },
-          { name: t("network"), path: "/networks", icon: Network },
           { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign },
           { name: t("company"), path: "/companies", icon: BriefcaseBusiness }
         ] : []),
@@ -142,6 +141,7 @@ export default function Topbar() {
       show: canViewSettings || canViewContentIdSettings,
       items: [
         ...(canViewSettings ? [{ name: t("systemSettings"), path: "/settings/system", icon: Settings }] : []),
+        ...(canViewSettings ? [{ name: t("network"), path: "/networks", icon: Network }] : []),
         ...(canViewContentIdSettings ? [{ name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }] : [])
       ]
     }

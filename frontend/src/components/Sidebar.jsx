@@ -44,12 +44,12 @@ export default function Sidebar() {
   const useUploadedLogo = settings.logo_mode === "upload" && settings.logo_data_url;
   const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/exchange-rates", "/companies", "/groups"];
   const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
   const emailPaths = ["/email/notification"];
-  const settingsPaths = ["/settings/system", "/settings/content-id"];
+  const settingsPaths = ["/settings/system", "/settings/content-id", "/networks"];
   const hasAnyAppAccess = canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
@@ -79,7 +79,6 @@ export default function Sidebar() {
     { name: t("report"), path: "/reports", icon: FileSpreadsheet, show: canViewReports },
     { name: "Export Multi", path: "/export-multi", icon: FileSpreadsheet, show: canViewReports },
     { name: "Channel", path: "/channels", icon: Video, show: canViewReports },
-    { name: t("network"), path: "/networks", icon: Network, show: canViewReports },
     { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign, show: canViewReports },
     { name: t("company"), path: "/companies", icon: BriefcaseBusiness, show: canViewReports },
     { name: t("group"), path: "/groups", icon: UsersRound, show: canViewReports || canViewPartnerDashboard }
@@ -101,8 +100,12 @@ export default function Sidebar() {
 
   const settingsMenus = [
     { name: t("systemSettings"), path: "/settings/system", icon: Settings },
+    { name: t("network"), path: "/networks", icon: Network },
     { name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }
-  ].filter((item) => item.path === "/settings/system" ? canViewSettings : canViewContentIdSettings);
+  ].filter((item) => {
+    if (item.path === "/settings/system" || item.path === "/networks") return canViewSettings;
+    return canViewContentIdSettings;
+  });
 
   return (
     <aside

@@ -130,12 +130,12 @@ function MobileNav() {
   const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/exchange-rates", "/companies", "/groups"];
   const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
   const emailPaths = ["/email/notification"];
-  const settingsPaths = ["/settings/system", "/settings/content-id"];
+  const settingsPaths = ["/settings/system", "/settings/content-id", "/networks"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
   const [contentIdOpen, setContentIdOpen] = useState(contentIdPaths.includes(location.pathname));
@@ -181,12 +181,6 @@ function MobileNav() {
       show: canViewReports
     },
     {
-      name: t("network"),
-      path: "/networks",
-      icon: Network,
-      show: canViewReports
-    },
-    {
       name: t("exchangeRates"),
       path: "/exchange-rates",
       icon: CircleDollarSign,
@@ -222,11 +216,19 @@ function MobileNav() {
       icon: Settings
     },
     {
+      name: t("network"),
+      path: "/networks",
+      icon: Network
+    },
+    {
       name: "Content ID Setting",
       path: "/settings/content-id",
       icon: Disc3
     }
-  ].filter((item) => item.path === "/settings/system" ? canViewSettings : canViewContentIdSettings);
+  ].filter((item) => {
+    if (item.path === "/settings/system" || item.path === "/networks") return canViewSettings;
+    return canViewContentIdSettings;
+  });
 
   return (
     <div className="hidden">
@@ -640,7 +642,7 @@ function PrivateLayout() {
           <Route
             path="/networks"
             element={
-              canViewReports ? (
+              canViewSettings ? (
                 <NetworkPage />
               ) : (
                 <Navigate to={defaultPath} replace />
