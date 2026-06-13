@@ -34,6 +34,7 @@ const ROLE_OPTIONS = [
   "user"
 ];
 const ACCOUNT_CLAIM_MANAGER_ROLE_OPTIONS = ["Claim Manager"];
+const SUPER_ADMIN_ROLES = ["supper admin", "super admin"];
 
 function roleList(item) {
   if (Array.isArray(item?.roles)) return item.roles.filter(Boolean);
@@ -52,6 +53,10 @@ function roleList(item) {
 
 function hasRole(item, role) {
   return roleList(item).some((value) => String(value).toLowerCase() === String(role).toLowerCase());
+}
+
+function isSuperAdminAccount(item) {
+  return roleList(item).some((role) => SUPER_ADMIN_ROLES.includes(String(role || "").trim().toLowerCase()));
 }
 
 function SearchableAddSelect({
@@ -156,15 +161,29 @@ export default function AccountPage() {
     try {
       setLoadingUsers(true);
 
-      const [usersRes, groupsRes, labelsRes] = await Promise.all([
-        api.get("/auth/users"),
-        api.get("/reports/groups"),
+      const usersRes = await api.get("/auth/users");
+      setUsers((usersRes.data.data || []).filter((item) => !isSuperAdminAccount(item)));
+
+      const [groupsResult, labelsResult] = await Promise.allSettled([
+        isAccountClaimManagerRole && !isAdmin
+          ? Promise.resolve({ data: { data: [] } })
+          : api.get("/reports/groups"),
         api.get("/content-id/labels")
       ]);
 
-      setUsers(usersRes.data.data || []);
-      setGroups(groupsRes.data.data || []);
-      setLabels(labelsRes.data.labels || labelsRes.data.data || []);
+      setGroups(groupsResult.status === "fulfilled" ? groupsResult.value.data.data || [] : []);
+      setLabels(
+        labelsResult.status === "fulfilled"
+          ? labelsResult.value.data.labels || labelsResult.value.data.data || []
+          : []
+      );
+
+      if (labelsResult.status === "rejected") {
+        setMessage(
+          labelsResult.reason?.response?.data?.message ||
+            "Could not load claim labels"
+        );
+      }
     } catch (error) {
       setMessage(
         error.response?.data?.message ||

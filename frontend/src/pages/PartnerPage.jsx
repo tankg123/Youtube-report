@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Building2, CheckCircle2, Copy, CreditCard, Edit3, Link2, Loader2, Mail, MapPin, Phone, Plus, Search, Send, Trash2, Upload, User, X } from "lucide-react";
+import { Building2, CheckCircle2, Copy, CreditCard, Download, Edit3, Link2, Loader2, Mail, MapPin, Phone, Plus, Search, Send, Trash2, Upload, User, X } from "lucide-react";
 import api from "../api/api";
 
 const emptyPartner = {
@@ -69,8 +69,10 @@ export default function PartnerPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [exportingTemplate, setExportingTemplate] = useState(false);
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedPartnerIds, setSelectedPartnerIds] = useState([]);
   const fileInputRef = useRef(null);
 
   const filteredPartners = useMemo(() => {
@@ -86,6 +88,30 @@ export default function PartnerPage() {
       ].some((value) => String(value || "").toLowerCase().includes(keyword));
     });
   }, [partners, searchQuery]);
+
+  const selectedPartners = useMemo(() => {
+    const selected = new Set(selectedPartnerIds);
+    return partners.filter((partner) => selected.has(partner.id));
+  }, [partners, selectedPartnerIds]);
+
+  const allFilteredSelected = filteredPartners.length > 0 && filteredPartners.every((partner) => selectedPartnerIds.includes(partner.id));
+
+  function togglePartnerSelection(id) {
+    setSelectedPartnerIds((current) => (
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    ));
+  }
+
+  function toggleSelectFilteredPartners() {
+    const filteredIds = filteredPartners.map((partner) => partner.id);
+    setSelectedPartnerIds((current) => {
+      if (filteredIds.length === 0) return current;
+      if (filteredIds.every((id) => current.includes(id))) {
+        return current.filter((id) => !filteredIds.includes(id));
+      }
+      return Array.from(new Set([...current, ...filteredIds]));
+    });
+  }
 
   async function fetchPartners() {
     try {
@@ -124,6 +150,7 @@ export default function PartnerPage() {
         setMessage("Đã tạo partner");
       }
       setModalOpen(false);
+      setSelectedPartnerIds([]);
       await fetchPartners();
     } catch (error) {
       setMessage(error.response?.data?.message || error.response?.data?.error || "Lỗi lưu partner");
@@ -229,6 +256,48 @@ export default function PartnerPage() {
     }
   }
 
+  async function downloadPartnerTemplate(ids = []) {
+    try {
+      setExportingTemplate(true);
+      const selectedIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
+      const res = await api.get("/reports/partners/export-template", {
+        responseType: "blob",
+        params: selectedIds.length ? { ids: selectedIds.join(",") } : {}
+      });
+      const blob = new Blob([res.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = selectedIds.length ? "selected-partners.xlsx" : "partner-import-template.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setMessage(selectedIds.length ? `Exported ${selectedIds.length} selected partners` : "Partner template downloaded");
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not download partner template");
+    } finally {
+      setExportingTemplate(false);
+    }
+  }
+
+  async function deleteSelectedPartners() {
+    if (selectedPartnerIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedPartnerIds.length} selected partners? Related groups for these partners will also be deleted.`)) return;
+
+    try {
+      await Promise.all(selectedPartnerIds.map((id) => api.delete(`/reports/partners/${id}`)));
+      setMessage(`Deleted ${selectedPartnerIds.length} selected partners`);
+      setSelectedPartnerIds([]);
+      await fetchPartners();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not delete selected partners");
+      await fetchPartners();
+    }
+  }
+
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchPartners();
@@ -251,6 +320,15 @@ export default function PartnerPage() {
 
         <div className="flex flex-wrap gap-3">
           <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={importPartners} />
+          <button
+            type="button"
+            onClick={() => downloadPartnerTemplate()}
+            disabled={exportingTemplate}
+            className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-2xl px-5 py-3 font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            {exportingTemplate ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
+            Export template
+          </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -296,6 +374,51 @@ export default function PartnerPage() {
         </p>
       </div>
 
+      {selectedPartnerIds.length > 0 && (
+        <div className="mb-5 flex flex-col gap-3 rounded-3xl border border-blue-100 bg-blue-50 p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="font-black text-blue-800">{selectedPartnerIds.length} partners selected</p>
+            <p className="text-sm text-blue-600">
+              {selectedPartners.slice(0, 3).map((partner) => partner.partner_name).join(", ")}
+              {selectedPartners.length > 3 ? ` and ${selectedPartners.length - 3} more` : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={toggleSelectFilteredPartners}
+              className="rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-50"
+            >
+              {allFilteredSelected ? "Unselect filtered" : "Select all filtered"}
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadPartnerTemplate(selectedPartnerIds)}
+              disabled={exportingTemplate}
+              className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {exportingTemplate ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+              Export selected
+            </button>
+            <button
+              type="button"
+              onClick={deleteSelectedPartners}
+              className="inline-flex items-center gap-2 rounded-2xl bg-red-50 px-4 py-2 text-sm font-black text-red-600 hover:bg-red-100"
+            >
+              <Trash2 size={16} />
+              Delete selected
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedPartnerIds([])}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {message && <div className="mb-5 bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-5 py-4 font-medium">{message}</div>}
 
       {loading ? (
@@ -309,11 +432,19 @@ export default function PartnerPage() {
       ) : (
         <div className="grid xl:grid-cols-2 gap-5">
           {filteredPartners.map((partner) => (
-            <div key={partner.id} className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+            <div key={partner.id} className={`bg-white border rounded-3xl p-5 shadow-sm ${selectedPartnerIds.includes(partner.id) ? "border-blue-300 ring-2 ring-blue-100" : "border-slate-200"}`}>
               <div className="flex items-start justify-between gap-4 mb-5">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">{partner.partner_name}</h2>
-                  <p className="text-slate-500">{partner.display_name || "No display name"}</p>
+                <div className="flex min-w-0 items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedPartnerIds.includes(partner.id)}
+                    onChange={() => togglePartnerSelection(partner.id)}
+                    className="mt-1 h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    aria-label={`Select ${partner.partner_name}`}
+                  />
+                  <div className="min-w-0">
+                  <h2 className="truncate text-xl font-black text-slate-900">{partner.partner_name}</h2>
+                  <p className="truncate text-slate-500">{partner.display_name || "No display name"}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span className={`rounded-full px-3 py-1 text-xs font-black ${
                       partner.partner_status === "active"
@@ -329,6 +460,7 @@ export default function PartnerPage() {
                         Copy request link
                       </button>
                     )}
+                  </div>
                   </div>
                 </div>
                 <div className="flex gap-2">
