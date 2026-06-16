@@ -19,6 +19,7 @@ const quotaCosts = {
   "playlistItems.list": 1,
   "videos.list": 1
 };
+const CHANNELS_LIST_BATCH_SIZE = 50;
 
 function resetQuotaIfNeeded() {
   const today = new Date().toISOString().slice(0, 10);
@@ -223,6 +224,15 @@ function extractChannelInput(input) {
   return value;
 }
 
+function getUniqueDirectChannelIds(inputs = []) {
+  return [...new Set(
+    (inputs || [])
+      .map(extractChannelInput)
+      .filter(Boolean)
+      .filter((value) => !value.startsWith("@"))
+  )];
+}
+
 async function getChannelFromYoutube(input, options = {}) {
   const includeLatest = options.includeLatest !== false;
   const apiKey = getActiveYoutubeApiKey();
@@ -284,18 +294,26 @@ async function getChannelFromYoutube(input, options = {}) {
 
 async function getChannelsFromYoutube(inputs, options = {}) {
   const includeLatest = options.includeLatest === true;
+  const meta = options.meta || null;
   const apiKey = getActiveYoutubeApiKey();
 
   if (!apiKey) {
     throw new Error("Missing YOUTUBE_API_KEY or YOUTUBE_API_KEYS in .env");
   }
 
-  const ids = [...new Set((inputs || []).map(extractChannelInput).filter(Boolean))]
-    .filter((value) => !value.startsWith("@"));
+  const ids = getUniqueDirectChannelIds(inputs);
+  if (meta) {
+    meta.batch_size = CHANNELS_LIST_BATCH_SIZE;
+    meta.unique_channel_ids = ids.length;
+    meta.estimated_channels_list_requests = Math.ceil(ids.length / CHANNELS_LIST_BATCH_SIZE);
+  }
   const results = [];
 
-  for (let index = 0; index < ids.length; index += 50) {
-    const batch = ids.slice(index, index + 50);
+  for (let index = 0; index < ids.length; index += CHANNELS_LIST_BATCH_SIZE) {
+    const batch = ids.slice(index, index + CHANNELS_LIST_BATCH_SIZE);
+    if (meta) {
+      meta.requests_made = Number(meta.requests_made || 0) + 1;
+    }
     const response = await youtubeGet(YOUTUBE_API, {
       params: {
         part: includeLatest ? "snippet,statistics,contentDetails" : "snippet,statistics",

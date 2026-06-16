@@ -561,7 +561,8 @@ function groupDetail(groupId, month) {
 
 function isPartnerUser(user) {
   const roles = normalizedRoles(user?.roles?.length ? user.roles : user?.role);
-  return roles.includes("partner") && !roles.includes("admin") && !roles.includes("report manager");
+  const isAdminRole = roles.includes("admin") || roles.includes("super admin") || roles.includes("supper admin");
+  return roles.includes("partner") && !isAdminRole;
 }
 
 function partnerGroupIds(userId) {

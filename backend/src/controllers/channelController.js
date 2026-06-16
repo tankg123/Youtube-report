@@ -819,6 +819,7 @@ exports.syncManagedChannelsBasic = async (req, res) => {
   try {
     const rows = db.prepare("SELECT * FROM managed_channels ORDER BY id ASC").all();
     const channelIds = rows.map((row) => row.channel_id).filter(Boolean);
+    const syncMeta = {};
 
     if (!channelIds.length) {
       return res.json({
@@ -826,11 +827,17 @@ exports.syncManagedChannelsBasic = async (req, res) => {
         message: "No managed channels to sync",
         total: 0,
         synced: 0,
-        errors: []
+        errors: [],
+        quota: {
+          endpoint: "channels.list",
+          batch_size: 50,
+          estimated_requests: 0,
+          requests_made: 0
+        }
       });
     }
 
-    const youtubeRows = await getChannelsFromYoutube(channelIds, { includeLatest: false });
+    const youtubeRows = await getChannelsFromYoutube(channelIds, { includeLatest: false, meta: syncMeta });
     const youtubeById = new Map(youtubeRows.map((row) => [row.channel_id, row]));
     const errors = [];
     let synced = 0;
@@ -860,11 +867,18 @@ exports.syncManagedChannelsBasic = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Synced ${synced} managed channels`,
+      message: `Synced channel info for ${synced} managed channels`,
       total: rows.length,
       synced,
       errors,
-      batches: Math.ceil(channelIds.length / 50)
+      batches: syncMeta.estimated_channels_list_requests || 0,
+      quota: {
+        endpoint: "channels.list",
+        batch_size: syncMeta.batch_size || 50,
+        unique_channel_ids: syncMeta.unique_channel_ids || 0,
+        estimated_requests: syncMeta.estimated_channels_list_requests || 0,
+        requests_made: syncMeta.requests_made || 0
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -1114,6 +1128,7 @@ exports.deleteRevenueSharing = deleteRevenueSharing;
 exports.syncAllChannels = async (req, res) => {
   try {
     const rows = db.prepare("SELECT * FROM channels ORDER BY id ASC").all();
+    const channelIds = rows.map((channel) => channel.channel_id).filter(Boolean);
     let synced = 0;
     const errors = [];
 
