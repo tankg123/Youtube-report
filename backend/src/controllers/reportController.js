@@ -611,6 +611,32 @@ function safeDownloadName(value = "export") {
     .slice(0, 160) || fallback;
 }
 
+function getBrandNameForExport() {
+  try {
+    const row = db.prepare("SELECT value FROM system_settings WHERE key = ?").get("brand_name");
+    return String(row?.value || "ANS Network").trim() || "ANS Network";
+  } catch {
+    return "ANS Network";
+  }
+}
+
+function exportMonthFilePart(month = "") {
+  const value = String(month || "").trim();
+  const match = value.match(/^(\d{4})-(\d{2})$/);
+  if (match) return `${match[2]}-${match[1]}`;
+  return value || "month";
+}
+
+function groupExportFileName(detail, extension) {
+  const parts = [
+    exportMonthFilePart(detail?.month),
+    detail?.group_name || "group",
+    getBrandNameForExport()
+  ].map((part) => safeFileName(part)).filter(Boolean);
+
+  return `${parts.join("-")}.${extension}`;
+}
+
 function setDownloadHeaders(res, contentType, fileName) {
   const safeName = safeDownloadName(fileName);
   const encodedName = encodeURIComponent(fileName).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -806,7 +832,7 @@ function buildReconciliationWorkbook(detail, company) {
 
 async function sendExcelExport(res, detail, company) {
   const buffer = await generateGroupReconciliationExcel(detail, company);
-  const fileName = `${safeFileName(detail.group_name || "group")}-${detail.month || "report"}.xlsx`;
+  const fileName = groupExportFileName(detail, "xlsx");
   setDownloadHeaders(res, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
   res.send(buffer);
 }
@@ -830,7 +856,7 @@ function getUploadedPdfLogo() {
 
 async function sendPdfExport(res, detail, company, options = {}) {
   const currency = detail.currency || "USD";
-  const fileName = `${safeFileName(detail.group_name || "group")}-${detail.month || "invoice"}.pdf`;
+  const fileName = groupExportFileName(detail, "pdf");
   const includeSignatures = Boolean(options.includeSignatures);
 
   const doc = new PDFDocument({ size: "A4", margin: 0 });

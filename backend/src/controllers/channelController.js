@@ -126,18 +126,30 @@ exports.getAllChannels = (req, res) => {
     if (keyword) {
       rows = db
         .prepare(`
-          SELECT * FROM channels
-          WHERE title LIKE ?
-             OR channel_id LIKE ?
-             OR custom_url LIKE ?
-          ORDER BY updated_at DESC, id DESC
+          SELECT c.*, COALESCE(revenue.total_revenue, 0) AS total_revenue
+          FROM channels c
+          LEFT JOIN (
+            SELECT channel_id, SUM(revenue) AS total_revenue
+            FROM channel_revenues
+            GROUP BY channel_id
+          ) revenue ON revenue.channel_id = c.channel_id
+          WHERE c.title LIKE ?
+             OR c.channel_id LIKE ?
+             OR c.custom_url LIKE ?
+          ORDER BY c.updated_at DESC, c.id DESC
         `)
         .all(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
     } else {
       rows = db
         .prepare(`
-          SELECT * FROM channels
-          ORDER BY updated_at DESC, id DESC
+          SELECT c.*, COALESCE(revenue.total_revenue, 0) AS total_revenue
+          FROM channels c
+          LEFT JOIN (
+            SELECT channel_id, SUM(revenue) AS total_revenue
+            FROM channel_revenues
+            GROUP BY channel_id
+          ) revenue ON revenue.channel_id = c.channel_id
+          ORDER BY c.updated_at DESC, c.id DESC
         `)
         .all();
     }
@@ -147,6 +159,7 @@ exports.getAllChannels = (req, res) => {
       const network = getCurrentChannelNetwork(channel.channel_id);
       return {
         ...channel,
+        total_revenue: Number(row.total_revenue || 0),
         current_network: network
           ? {
               id: network.new_network_id,
@@ -1214,6 +1227,7 @@ exports.syncAllChannelsBasic = async (req, res) => {
       message: "Đã sync lại stats toàn bộ channel",
       total: rows.length,
       synced,
+      batches: Math.ceil(channelIds.length / 50),
       errors
     });
   } catch (error) {

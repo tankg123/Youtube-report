@@ -176,6 +176,7 @@ function getAllowedLabelKeys(user) {
 
 function claimMatchesAllowedLabels(claim, allowedLabelKeys) {
   if (!allowedLabelKeys) return true;
+  if (!claim) return false;
   const labels = normalizeLabels(claim.asset?.labels || []);
   return labels.some((label) => allowedLabelKeys.has(normalizeLabelKey(label)));
 }
@@ -428,24 +429,87 @@ async function releaseClaim({ accountId, claimId }) {
     }
   );
 
-  const released = normalizeClaim(response.data, account, response.data.videoId || null);
-  try {
-    return await getClaimForAccount({ accountId, claimId });
-  } catch {
-    return released;
+  return normalizeClaim(response.data, account, response.data.videoId || null);
+}
+
+function normalizeReleaseItems(releases) {
+  return (Array.isArray(releases) ? releases : [])
+    .map((item) => ({
+      accountId: Number(item.accountId),
+      claimId: String(item.claimId || item.id || "").trim(),
+      videoId: extractVideoId(item.videoId || item.video_id || item.videoUrl || item.video_url || ""),
+      assetId: item.assetId || item.asset_id || item.asset?.id || null
+    }))
+    .filter((item) => item.accountId && item.claimId);
+}
+
+function claimReleaseKey(item) {
+  return `${item.accountId}:${item.claimId}`;
+}
+
+function groupReleaseItemsByVideo(items) {
+  const groups = new Map();
+  items.forEach((item) => {
+    if (!item.accountId || !item.videoId) return;
+    const key = `${item.accountId}:${item.videoId}`;
+    if (!groups.has(key)) groups.set(key, { accountId: item.accountId, videoId: item.videoId, claimIds: new Set() });
+    groups.get(key).claimIds.add(item.claimId);
+  });
+  return Array.from(groups.values());
+}
+
+function releaseVideoGroupKey(item) {
+  return `${item.accountId}:${item.videoId}`;
+}
+
+async function listClaimsForReleaseItems(items, { hydrateAssets = false } = {}) {
+  const claims = [];
+  const errors = [];
+  const erroredGroupKeys = new Set();
+
+  for (const group of groupReleaseItemsByVideo(items)) {
+    try {
+      const account = listAccounts().find((item) => Number(item.id) === Number(group.accountId));
+      if (!account) throw new Error("CMS network is not connected.");
+      const videoClaims = await listClaimsForVideo(account, group.videoId);
+      claims.push(...videoClaims.filter((claim) => group.claimIds.has(claim.id)));
+    } catch (error) {
+      erroredGroupKeys.add(releaseVideoGroupKey(group));
+      errors.push({
+        accountId: group.accountId,
+        videoId: group.videoId,
+        message: googleErrorMessage(error)
+      });
+    }
   }
+
+  const resolvedClaims = hydrateAssets && claims.length ? await hydrateClaimsWithAssets(claims) : claims;
+  return {
+    claimsByKey: new Map(resolvedClaims.map((claim) => [claimReleaseKey(claim), claim])),
+    erroredGroupKeys,
+    errors
+  };
 }
 
 async function releaseClaims({ releases, user }) {
-  const items = Array.isArray(releases) ? releases : [];
+  const items = normalizeReleaseItems(releases);
   if (!items.length) throw new Error("Please select at least one claim to release.");
   const allowedLabelKeys = getAllowedLabelKeys(user);
+
+  let claimsBeforeRelease = new Map();
+  const itemsWithVideoId = items.filter((item) => item.videoId);
+  if (itemsWithVideoId.length) {
+    const lookup = await listClaimsForReleaseItems(itemsWithVideoId, { hydrateAssets: Boolean(allowedLabelKeys) });
+    claimsBeforeRelease = lookup.claimsByKey;
+  }
 
   const results = [];
   for (const item of items) {
     try {
       if (allowedLabelKeys) {
-        const currentClaim = await getClaimForAccount({ accountId: item.accountId, claimId: item.claimId });
+        const currentClaim =
+          claimsBeforeRelease.get(claimReleaseKey(item)) ||
+          (!item.videoId ? await getClaimForAccount({ accountId: item.accountId, claimId: item.claimId }) : null);
         if (!claimMatchesAllowedLabels(currentClaim, allowedLabelKeys)) {
           throw new Error("This claim is not assigned to your allowed labels.");
         }
@@ -454,24 +518,30 @@ async function releaseClaims({ releases, user }) {
       const released = await releaseClaim({ accountId: item.accountId, claimId: item.claimId });
       results.push({ ok: true, accountId: item.accountId, claimId: item.claimId, claim: released, verified: isInactiveClaim(released) });
     } catch (error) {
-      try {
-        const currentClaim = await getClaimForAccount({ accountId: item.accountId, claimId: item.claimId });
-        if (isInactiveClaim(currentClaim)) {
-          results.push({
-            ok: true,
-            accountId: item.accountId,
-            claimId: item.claimId,
-            claim: currentClaim,
-            verified: true,
-            message: "Release was verified after the request finished."
-          });
-          continue;
-        }
-      } catch {
-        // Keep the original Google/API error below.
-      }
       results.push({ ok: false, accountId: item.accountId, claimId: item.claimId, message: googleErrorMessage(error) });
     }
+  }
+
+  const releasedItemsWithVideoId = itemsWithVideoId.filter((item) => results.some((result) => result.accountId === item.accountId && result.claimId === item.claimId));
+  if (releasedItemsWithVideoId.length) {
+    const lookup = await listClaimsForReleaseItems(releasedItemsWithVideoId);
+    const claimsAfterRelease = lookup.claimsByKey;
+    results.forEach((result) => {
+      const originalItem = releasedItemsWithVideoId.find((item) => item.accountId === result.accountId && item.claimId === result.claimId);
+      if (!originalItem) return;
+      if (lookup.erroredGroupKeys.has(releaseVideoGroupKey(originalItem))) return;
+      const currentClaim = claimsAfterRelease.get(claimReleaseKey(originalItem));
+      const verified = !currentClaim || isInactiveClaim(currentClaim);
+      if (verified) {
+        result.ok = true;
+        result.verified = true;
+        result.claim = currentClaim || { id: result.claimId, status: "inactive" };
+        if (!result.message) result.message = "Release status verified with claims.list.";
+      } else if (result.ok) {
+        result.verified = false;
+        result.claim = currentClaim;
+      }
+    });
   }
 
   return {
