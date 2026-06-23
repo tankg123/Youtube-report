@@ -103,6 +103,7 @@ export default function Topbar() {
         { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
         { name: "Product Manager", path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
         { name: "Claim Manager", path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+        { name: "Whitelist", path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
         { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
         { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
       ].filter((item) => item.show)
