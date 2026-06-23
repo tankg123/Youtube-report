@@ -7,7 +7,7 @@ import {
   useLocation,
   Navigate
 } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, FileAudio, FileSignature, FileSpreadsheet, Landmark, Network, PackageSearch, Percent, ReceiptText, Settings, Tags, Users, UsersRound, Video, WalletCards, UserRound, Loader2, FileVideo, Mail, ShieldCheck, Sparkles, LogOut } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Database, Disc3, FileAudio, FileSignature, FileSpreadsheet, Landmark, Network, PackageSearch, Percent, ReceiptText, Settings, Tags, Users, UsersRound, Video, WalletCards, UserRound, Loader2, FileVideo, Mail, ShieldCheck, Sparkles, LogOut } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -211,6 +211,14 @@ function MobileNav() {
     { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
     { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
   ].filter((item) => item.show);
+  const mobileContentIdMenus =
+    canViewContentIdFull && !contentIdMenus.some((item) => item.path === "/content-id/whitelists")
+      ? [
+          ...contentIdMenus.slice(0, 4),
+          { name: "Whitelist", path: "/content-id/whitelists", icon: ShieldCheck },
+          ...contentIdMenus.slice(4)
+        ]
+      : contentIdMenus;
 
   const menus = [
     {
@@ -346,7 +354,7 @@ function MobileNav() {
             </button>
             {contentIdOpen && (
               <div className="grid grid-cols-2 gap-2 mt-2">
-                {contentIdMenus.map((item) => {
+                {mobileContentIdMenus.map((item) => {
                   const Icon = item.icon;
                   const active = location.pathname === item.path;
                   return (

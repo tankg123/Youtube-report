@@ -828,6 +828,43 @@ exports.bulkDeleteManagedChannels = (req, res) => {
   }
 };
 
+exports.bulkClearManagedChannelGroups = (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids)
+      ? [...new Set(req.body.ids.map((id) => Number(id)).filter(Boolean))]
+      : [];
+
+    if (!ids.length) {
+      return res.status(400).json({ success: false, message: "Please select at least one channel" });
+    }
+
+    const selectChannel = db.prepare("SELECT id, channel_id FROM managed_channels WHERE id = ?");
+    const deleteGroups = db.prepare("DELETE FROM group_channels WHERE channel_id = ?");
+    const transaction = db.transaction(() => {
+      let matched = 0;
+      let removed = 0;
+
+      for (const id of ids) {
+        const channel = selectChannel.get(id);
+        if (!channel?.channel_id) continue;
+        matched += 1;
+        removed += deleteGroups.run(channel.channel_id).changes;
+      }
+
+      return { matched, removed };
+    });
+
+    const result = transaction();
+    res.json({
+      success: true,
+      message: `Cleared groups for ${result.matched} channels (${result.removed} group links removed)`,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not clear selected channel groups", error: error.message });
+  }
+};
+
 exports.syncManagedChannelsBasic = async (req, res) => {
   try {
     const rows = db.prepare("SELECT * FROM managed_channels ORDER BY id ASC").all();

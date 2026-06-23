@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronDown,
   CircleDollarSign,
+  Database,
   Disc3,
   FileAudio,
   FileSignature,

@@ -54,6 +54,13 @@ router.post(
 );
 
 router.post(
+  "/management/bulk-clear-groups",
+  authMiddleware,
+  allowRoles(...CHANNEL_MANAGEMENT_ROLES),
+  channelController.bulkClearManagedChannelGroups
+);
+
+router.post(
   "/management/sync-basic",
   authMiddleware,
   allowRoles(...CHANNEL_MANAGEMENT_ROLES),

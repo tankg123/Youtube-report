@@ -454,6 +454,22 @@ export default function ChannelManagementPage() {
     }
   }
 
+  async function clearSelectedChannelGroups() {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Clear all group memberships for ${selectedIds.length} selected channels?`)) return;
+    try {
+      setSaving(true);
+      const res = await api.post("/channels/management/bulk-clear-groups", { ids: selectedIds });
+      setSelectedIds([]);
+      showToast(res.data.message || "Selected channel groups cleared");
+      await fetchData();
+    } catch (error) {
+      setMessage(error.response?.data?.message || error.response?.data?.error || "Could not clear selected channel groups");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   useEffect(() => {
     fetchData("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -692,6 +708,13 @@ export default function ChannelManagementPage() {
                 className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-100 font-bold text-sm flex items-center gap-2"
               >
                 <Unlink size={16} /> Unlink selected
+              </button>
+              <button
+                type="button"
+                onClick={clearSelectedChannelGroups}
+                className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold text-sm flex items-center gap-2"
+              >
+                <X size={16} /> Clear group
               </button>
               <button
                 type="button"
