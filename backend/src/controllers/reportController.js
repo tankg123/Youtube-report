@@ -375,9 +375,24 @@ function parseGroup(row) {
 function tierRate(tiers, revenue) {
   const match = [...(tiers || [])]
     .sort((a, b) => Number(a.min || 0) - Number(b.min || 0))
-    .find((tier) => revenue >= Number(tier.min || 0) && revenue <= Number(tier.max || Number.MAX_SAFE_INTEGER));
+    .find((tier) => {
+      const min = Number(tier.min || 0);
+      const maxValue = tier.max === "" || tier.max == null || Number(tier.max) === 0
+        ? Number.MAX_SAFE_INTEGER
+        : Number(tier.max);
+      return revenue >= min && revenue <= maxValue;
+    });
 
   return match ? Number(match.rate || 0) : 0;
+}
+
+function customShareRate(customShare, customShareOverride = 0) {
+  if (!customShareOverride || customShare == null || customShare === "") return null;
+  return Number(customShare || 0);
+}
+
+function hasRevenueTiers(tiers) {
+  return Array.isArray(tiers) && tiers.length > 0;
 }
 
 function normalizeCurrency(value) {
@@ -432,16 +447,18 @@ function groupDefaultShare(groupId, month = "") {
 
 function existingShareForChannel(channelId, month = "", excludeGroupId = null) {
   const rows = db.prepare(`
-    SELECT gc.group_id, gc.custom_share
+    SELECT gc.group_id, gc.custom_share, gc.custom_share_override, cg.tiers
     FROM group_channels gc
+    JOIN channel_groups cg ON cg.id = gc.group_id
     WHERE gc.channel_id = ?
       AND (? IS NULL OR gc.group_id != ?)
   `).all(channelId, excludeGroupId, excludeGroupId);
 
   return rows.reduce((sum, row) => {
-    const rate = row.custom_share == null || row.custom_share === ""
+    const group = parseGroup(row);
+    const rate = hasRevenueTiers(group.tiers)
       ? groupDefaultShare(row.group_id, month)
-      : Number(row.custom_share || 0);
+      : customShareRate(row.custom_share, row.custom_share_override) ?? 0;
     return sum + rate;
   }, 0);
 }
@@ -459,7 +476,7 @@ function groupDetail(groupId, month) {
 
   const conversion = exchangeFactor(group.currency, month);
   const channels = db.prepare(`
-    SELECT gc.id AS group_channel_id, gc.custom_share, gc.channel_id AS group_channel_ref,
+    SELECT gc.id AS group_channel_id, gc.custom_share, gc.custom_share_override, gc.channel_id AS group_channel_ref,
            c.*, COALESCE(cr.revenue, 0) AS revenue,
            COALESCE(NULLIF(cr.network_name, ''), mn.name, '-') AS network_name
     FROM group_channels gc
@@ -479,7 +496,7 @@ function groupDetail(groupId, month) {
     WHERE gc.group_id = ?
     ORDER BY c.title COLLATE NOCASE, gc.channel_id
   `).all(month || "", groupId).map((row) => {
-    const rate = row.custom_share == null || row.custom_share === "" ? null : Number(row.custom_share);
+    const rate = customShareRate(row.custom_share, row.custom_share_override);
     const revenueUsd = Number(row.revenue || 0);
     return {
       ...parseChannel(row),
@@ -497,8 +514,9 @@ function groupDetail(groupId, month) {
   const totalRevenueUsd = channels.reduce((sum, channel) => sum + Number(channel.revenue_usd || 0), 0);
   const totalRevenueConverted = totalRevenueUsd * conversion.factor;
   const defaultRate = tierRate(group.tiers, totalRevenueConverted);
+  const useTierRate = hasRevenueTiers(group.tiers);
   const channelRows = channels.map((channel) => {
-    const rate = channel.applied_share == null ? defaultRate : channel.applied_share;
+    const rate = useTierRate ? defaultRate : channel.applied_share ?? 0;
     const shareAmountUsd = Number(channel.revenue_usd || 0) * rate / 100;
     return {
       ...channel,
@@ -2935,7 +2953,7 @@ exports.addGroupChannels = async (req, res) => {
     const resolvedIds = [...directIds];
 
     for (const handle of handleInputs) {
-      const channel = await getChannelFromYoutube(handle);
+      const channel = await getChannelFromYoutube(handle, { includeLatest: false });
       upsertChannel(channel);
       resolvedIds.push(channel.channel_id);
     }
@@ -2997,20 +3015,26 @@ exports.addGroupChannels = async (req, res) => {
           channel_id: channel.channel_id,
           revenue_share_rate: Number(channel.revenue_share_rate)
         }))
-        .filter((channel) => Number.isFinite(channel.revenue_share_rate) && channel.revenue_share_rate >= 0 && channel.revenue_share_rate <= 100)
+        .filter((channel) => Number.isFinite(channel.revenue_share_rate) && channel.revenue_share_rate > 0 && channel.revenue_share_rate <= 100)
         .map((channel) => [channel.channel_id, channel.revenue_share_rate])
     );
+    const currentGroup = parseGroup(db.prepare("SELECT * FROM channel_groups WHERE id = ?").get(req.params.id));
+    const currentGroupUsesTiers = hasRevenueTiers(currentGroup?.tiers);
     const defaultGroupShare = groupDefaultShare(req.params.id, month || "");
     const shareForChannel = (channelId) => {
+      if (currentGroupUsesTiers) return defaultGroupShare;
       if (customShare != null) return customShare;
       if (managedShareByChannel.has(channelId)) return managedShareByChannel.get(channelId);
-      return defaultGroupShare;
+      return 0;
     };
     const customShareForInsert = (channelId) => {
       if (customShare != null) return customShare;
       if (managedShareByChannel.has(channelId)) return managedShareByChannel.get(channelId);
       return null;
     };
+    const customShareOverrideForInsert = (channelId) => (
+      customShare != null || managedShareByChannel.has(channelId) ? 1 : 0
+    );
 
     const invalidChannels = channelsToInsert
       .map((channelId) => {
@@ -3036,12 +3060,14 @@ exports.addGroupChannels = async (req, res) => {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO group_channels (group_id, channel_id, custom_share)
-      VALUES (?, ?, ?)
+      INSERT INTO group_channels (group_id, channel_id, custom_share, custom_share_override)
+      VALUES (?, ?, ?, ?)
     `);
 
     const insertChannels = db.transaction((channelIds) => {
-      for (const channelId of channelIds) stmt.run(req.params.id, channelId, customShareForInsert(channelId));
+      for (const channelId of channelIds) {
+        stmt.run(req.params.id, channelId, customShareForInsert(channelId), customShareOverrideForInsert(channelId));
+      }
     });
     insertChannels(channelsToInsert);
 

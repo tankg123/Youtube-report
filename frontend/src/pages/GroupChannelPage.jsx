@@ -616,6 +616,12 @@ function GroupForm({ partners, value, onChange }) {
     return matchedPartners;
   }, [partnerSearch, sortedPartners, value.partner_id]);
   const selectedPartner = sortedPartners.find((partner) => String(partner.id) === String(value.partner_id));
+  const addTier = () => {
+    const tiers = value.tiers || [];
+    const previousMax = Number(tiers[tiers.length - 1]?.max);
+    const nextMin = Number.isFinite(previousMax) && previousMax > 0 ? previousMax + 1 : 0;
+    onChange({ ...value, tiers: [...tiers, { min: nextMin, max: 0, rate: 0 }] });
+  };
 
   return (
     <div className="space-y-5">
@@ -715,7 +721,7 @@ function GroupForm({ partners, value, onChange }) {
             <h3 className="font-black text-slate-900">Revenue tiers</h3>
             <p className="text-xs text-slate-500">Có thể bỏ trống nếu group không dùng tier.</p>
           </div>
-          <button type="button" onClick={() => onChange({ ...value, tiers: [...value.tiers, { min: 0, max: 0, rate: 0 }] })} className="px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-sm flex items-center gap-2">
+          <button type="button" onClick={addTier} className="px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-sm flex items-center gap-2">
             <Plus size={15} />
             Thêm tier
           </button>
@@ -1514,7 +1520,7 @@ export default function GroupChannelPage() {
                 />
               </label>
               <label>
-                <span className="font-black text-slate-900 mb-3 block">Revenue share</span>
+                <span className="font-black text-slate-900 mb-3 block">Revenue share override</span>
                 <input
                   type="number"
                   value={revenueShare}

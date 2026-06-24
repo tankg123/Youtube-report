@@ -17,7 +17,6 @@ const contentIdRoutes = require("./routes/contentIdRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
 const emailRoutes = require("./routes/emailRoutes");
 const publicRoutes = require("./routes/publicRoutes");
-const { syncVideosNow } = require("./controllers/videoController");
 const { processDueEmailSchedules } = require("./controllers/emailController");
 const apiKeyMiddleware = require("./middlewares/apiKeyMiddleware");
 
@@ -78,48 +77,7 @@ app.use((req, res) => {
   });
 });
 
-let videoSyncRunning = false;
 let emailScheduleRunning = false;
-
-function millisecondsUntilNextBangkokMidnight() {
-  const now = new Date();
-  const bangkokNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
-  const nextBangkokMidnightUtc = Date.UTC(
-    bangkokNow.getUTCFullYear(),
-    bangkokNow.getUTCMonth(),
-    bangkokNow.getUTCDate() + 1,
-    0,
-    0,
-    0
-  ) - 7 * 60 * 60 * 1000;
-
-  return Math.max(1000, nextBangkokMidnightUtc - now.getTime());
-}
-
-async function runDailyVideoSync() {
-  if (videoSyncRunning) return;
-
-  try {
-    videoSyncRunning = true;
-    console.log("[video-sync] Starting scheduled sync at 00:00 GMT+7");
-    const result = await syncVideosNow();
-    console.log(`[video-sync] Done. Channels: ${result.channels}, videos: ${result.synced}, errors: ${result.errors.length}`);
-  } catch (error) {
-    console.error("[video-sync] Failed:", error.message);
-  } finally {
-    videoSyncRunning = false;
-  }
-}
-
-function scheduleDailyVideoSync() {
-  const delay = millisecondsUntilNextBangkokMidnight();
-  console.log(`[video-sync] Next scheduled sync in ${Math.round(delay / 1000)}s`);
-
-  setTimeout(() => {
-    runDailyVideoSync();
-    setInterval(runDailyVideoSync, 24 * 60 * 60 * 1000);
-  }, delay);
-}
 
 async function runEmailScheduleTick() {
   if (emailScheduleRunning) return;
@@ -142,6 +100,5 @@ function scheduleEmailNotifications() {
 
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
-  scheduleDailyVideoSync();
   scheduleEmailNotifications();
 });

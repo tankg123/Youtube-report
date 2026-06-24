@@ -1,7 +1,6 @@
 const axios = require("axios");
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3/channels";
-const YOUTUBE_SEARCH_API = "https://www.googleapis.com/youtube/v3/search";
 const YOUTUBE_PLAYLIST_ITEMS_API = "https://www.googleapis.com/youtube/v3/playlistItems";
 const YOUTUBE_VIDEOS_API = "https://www.googleapis.com/youtube/v3/videos";
 const quotaState = {
@@ -15,7 +14,6 @@ const quotaState = {
 
 const quotaCosts = {
   "channels.list": 1,
-  "search.list": 100,
   "playlistItems.list": 1,
   "videos.list": 1
 };
@@ -358,37 +356,6 @@ async function getChannelsFromYoutube(inputs, options = {}) {
   }
 
   return results;
-}
-
-async function getLatestVideos(channelId, apiKey) {
-  const response = await youtubeGet(YOUTUBE_SEARCH_API, {
-    params: {
-      part: "snippet",
-      channelId,
-      maxResults: 2,
-      order: "date",
-      type: "video",
-      key: apiKey
-    },
-    timeout: 15000
-  }, "search.list");
-
-  return (response.data?.items || []).map((item) => {
-    const videoId = item.id?.videoId || "";
-    const snippet = item.snippet || {};
-    const thumbnails = snippet.thumbnails || {};
-
-    return {
-      video_id: videoId,
-      title: snippet.title || "",
-      published_at: snippet.publishedAt || "",
-      thumbnail:
-        thumbnails.medium?.url ||
-        thumbnails.default?.url ||
-        "",
-      url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : ""
-    };
-  });
 }
 
 async function getLatestVideosFromUploads(uploadsPlaylistId, apiKey) {

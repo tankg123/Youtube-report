@@ -271,6 +271,7 @@ db.exec(`
     group_id INTEGER NOT NULL,
     channel_id TEXT NOT NULL,
     custom_share REAL,
+    custom_share_override INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(group_id, channel_id),
     FOREIGN KEY (group_id) REFERENCES channel_groups(id) ON DELETE CASCADE
@@ -728,6 +729,19 @@ const groupColumns = db.prepare("PRAGMA table_info(channel_groups)").all();
 const hasGroupFeeRate = groupColumns.some((column) => column.name === "fee_rate");
 if (!hasGroupFeeRate) {
   db.exec("ALTER TABLE channel_groups ADD COLUMN fee_rate REAL NOT NULL DEFAULT 0");
+}
+
+const groupChannelColumns = db.prepare("PRAGMA table_info(group_channels)").all();
+const hasCustomShareOverride = groupChannelColumns.some((column) => column.name === "custom_share_override");
+if (!hasCustomShareOverride) {
+  db.exec("ALTER TABLE group_channels ADD COLUMN custom_share_override INTEGER NOT NULL DEFAULT 0");
+  db.exec(`
+    UPDATE group_channels
+    SET custom_share_override = CASE
+      WHEN custom_share IS NOT NULL AND custom_share != 0 THEN 1
+      ELSE 0
+    END
+  `);
 }
 
 db.exec("CREATE INDEX IF NOT EXISTS idx_channel_network_history_channel_month ON channel_network_history(channel_id, start_month)");
