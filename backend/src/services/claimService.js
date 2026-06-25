@@ -419,15 +419,38 @@ async function releaseClaim({ accountId, claimId }) {
   if (!accountId || !claimId) throw new Error("Missing CMS account or claim ID.");
 
   const { accessToken, account } = await getFreshAccessTokenForAccount(accountId);
-  const response = await axios.patch(
-    `${CONTENT_ID_API_BASE}/claims/${encodeURIComponent(claimId)}`,
-    { status: "inactive" },
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: { onBehalfOfContentOwner: account.cms_id },
-      timeout: 60000
-    }
-  );
+  let response;
+
+  try {
+    response = await axios.delete(
+      `${CONTENT_ID_API_BASE}/claims/${encodeURIComponent(claimId)}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: { onBehalfOfContentOwner: account.cms_id },
+        timeout: 60000
+      }
+    );
+  } catch (error) {
+    if (error.response?.status !== 404) throw error;
+    response = await axios.post(
+      `${CONTENT_ID_API_BASE}/claims/${encodeURIComponent(claimId)}/release`,
+      {},
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: { onBehalfOfContentOwner: account.cms_id },
+        timeout: 60000
+      }
+    );
+  }
+
+  if (!response.data || !response.data.id) {
+    return {
+      id: claimId,
+      accountId,
+      cmsName: account.cms_name,
+      status: "release_requested"
+    };
+  }
 
   return normalizeClaim(response.data, account, response.data.videoId || null);
 }
@@ -516,20 +539,35 @@ async function releaseClaims({ releases, user }) {
       }
 
       const released = await releaseClaim({ accountId: item.accountId, claimId: item.claimId });
-      results.push({ ok: true, accountId: item.accountId, claimId: item.claimId, claim: released, verified: isInactiveClaim(released) });
+      results.push({
+        ok: false,
+        releaseRequested: true,
+        accountId: item.accountId,
+        claimId: item.claimId,
+        claim: released,
+        verified: false,
+        message: "Release requested. Waiting for verification with claims.list."
+      });
     } catch (error) {
       results.push({ ok: false, accountId: item.accountId, claimId: item.claimId, message: googleErrorMessage(error) });
     }
   }
 
-  const releasedItemsWithVideoId = itemsWithVideoId.filter((item) => results.some((result) => result.accountId === item.accountId && result.claimId === item.claimId));
+  const releasedItemsWithVideoId = itemsWithVideoId.filter((item) => results.some((result) => (
+    result.releaseRequested && result.accountId === item.accountId && result.claimId === item.claimId
+  )));
   if (releasedItemsWithVideoId.length) {
     const lookup = await listClaimsForReleaseItems(releasedItemsWithVideoId);
     const claimsAfterRelease = lookup.claimsByKey;
     results.forEach((result) => {
       const originalItem = releasedItemsWithVideoId.find((item) => item.accountId === result.accountId && item.claimId === result.claimId);
       if (!originalItem) return;
-      if (lookup.erroredGroupKeys.has(releaseVideoGroupKey(originalItem))) return;
+      if (lookup.erroredGroupKeys.has(releaseVideoGroupKey(originalItem))) {
+        result.ok = false;
+        result.verified = false;
+        result.message = "Release was requested, but claims.list verification failed. Please search again before treating this claim as released.";
+        return;
+      }
       const currentClaim = claimsAfterRelease.get(claimReleaseKey(originalItem));
       const verified = !currentClaim || isInactiveClaim(currentClaim);
       if (verified) {
@@ -537,17 +575,19 @@ async function releaseClaims({ releases, user }) {
         result.verified = true;
         result.claim = currentClaim || { id: result.claimId, status: "inactive" };
         if (!result.message) result.message = "Release status verified with claims.list.";
-      } else if (result.ok) {
+      } else {
+        result.ok = false;
         result.verified = false;
         result.claim = currentClaim;
+        result.message = "Release request completed, but Google still reports this claim as active.";
       }
     });
   }
 
   return {
     results,
-    successCount: results.filter((item) => item.ok).length,
-    failedCount: results.filter((item) => !item.ok).length
+    successCount: results.filter((item) => item.ok && item.verified).length,
+    failedCount: results.filter((item) => !(item.ok && item.verified)).length
   };
 }
 

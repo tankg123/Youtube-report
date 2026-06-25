@@ -735,7 +735,7 @@ function GroupForm({ partners, value, onChange }) {
             <div key={index} className="grid grid-cols-[26px_1fr_1fr_1fr_34px] gap-3 items-end">
               <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 text-xs font-black flex items-center justify-center">{index + 1}</span>
               <label>
-                <span className="text-xs font-black uppercase text-slate-400">Min Revenue</span>
+                <span className="text-xs font-black uppercase text-slate-400">Min Revenue USD</span>
                 <input type="number" value={tier.min} onChange={(e) => {
                   const tiers = [...value.tiers];
                   tiers[index] = { ...tier, min: e.target.value };
@@ -743,7 +743,7 @@ function GroupForm({ partners, value, onChange }) {
                 }} className="w-full rounded-xl border border-slate-200 px-3 py-2" />
               </label>
               <label>
-                <span className="text-xs font-black uppercase text-slate-400">Max Revenue</span>
+                <span className="text-xs font-black uppercase text-slate-400">Max Revenue USD</span>
                 <input type="number" value={tier.max} onChange={(e) => {
                   const tiers = [...value.tiers];
                   tiers[index] = { ...tier, max: e.target.value };
@@ -1346,7 +1346,7 @@ export default function GroupChannelPage() {
                     <div className="space-y-2">
                       {(detail.tiers || []).map((tier, index) => (
                         <div key={index} className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
-                          <span className="font-bold">{money(tier.min, detail.currency)} - {money(tier.max, detail.currency)}</span>
+                          <span className="font-bold">{usd(tier.min)} - {usd(tier.max)}</span>
                           <span className="font-black">{tier.rate}%</span>
                         </div>
                       ))}

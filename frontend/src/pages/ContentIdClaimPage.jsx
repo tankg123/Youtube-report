@@ -155,7 +155,7 @@ export default function ContentIdClaimPage() {
         videos: current.videos.map((video) => {
           const claims = (video.claims || []).map((claim) => {
             const release = releaseByKey.get(`${claim.accountId}:${claim.id}`);
-            if (!release?.ok) return claim;
+            if (!release?.ok || !release?.verified) return claim;
             const releasedClaim = release.claim || {};
             return {
               ...claim,
@@ -186,7 +186,16 @@ export default function ContentIdClaimPage() {
       const data = await releaseContentIdClaims(selectedReleases);
       applyReleaseResults(data.results || []);
       setSelectedClaims({});
-      setMessage(`Released ${data.successCount} claim(s), ${data.failedCount} failed. Status verified with claims.list.`);
+      const success = data.successCount || 0;
+      const failed = data.failedCount || 0;
+      const failedDetails = failed
+        ? ` ${failed} failed or not verified. Search again to see the current Google status.`
+        : "";
+      if (!success && failed) {
+        setError(`No claim was verified as released.${failedDetails}`);
+      } else {
+        setMessage(`Released ${success} verified claim(s).${failedDetails}`);
+      }
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {

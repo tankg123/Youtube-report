@@ -423,7 +423,7 @@ function exchangeFactor(currency = "USD", month = "") {
   return { factor: 1, rate: null, missing: false };
 }
 
-function groupRevenueTotal(groupId, month = "", currency = "USD") {
+function groupRevenueTotalUsd(groupId, month = "") {
   const row = db.prepare(`
     SELECT COALESCE(SUM(cr.revenue), 0) AS total_revenue
     FROM group_channels gc
@@ -436,13 +436,13 @@ function groupRevenueTotal(groupId, month = "", currency = "USD") {
     WHERE gc.group_id = ?
   `).get(month || "", groupId);
 
-  return Number(row?.total_revenue || 0) * exchangeFactor(currency, month).factor;
+  return Number(row?.total_revenue || 0);
 }
 
 function groupDefaultShare(groupId, month = "") {
   const group = parseGroup(db.prepare("SELECT * FROM channel_groups WHERE id = ?").get(groupId));
   if (!group) return 0;
-  return tierRate(group.tiers, groupRevenueTotal(groupId, month, group.currency));
+  return tierRate(group.tiers, groupRevenueTotalUsd(groupId, month));
 }
 
 function existingShareForChannel(channelId, month = "", excludeGroupId = null) {
@@ -513,7 +513,7 @@ function groupDetail(groupId, month) {
 
   const totalRevenueUsd = channels.reduce((sum, channel) => sum + Number(channel.revenue_usd || 0), 0);
   const totalRevenueConverted = totalRevenueUsd * conversion.factor;
-  const defaultRate = tierRate(group.tiers, totalRevenueConverted);
+  const defaultRate = tierRate(group.tiers, totalRevenueUsd);
   const useTierRate = hasRevenueTiers(group.tiers);
   const channelRows = channels.map((channel) => {
     const rate = useTierRate ? defaultRate : channel.applied_share ?? 0;
@@ -572,7 +572,9 @@ function groupDetail(groupId, month) {
       remaining_converted: remainingConverted,
       channels: channelRows.length,
       rows: channelRows.filter((channel) => Number(channel.revenue_usd || 0) > 0).length,
-      default_rate: defaultRate
+      default_rate: defaultRate,
+      tier_currency: "USD",
+      tier_revenue_usd: totalRevenueUsd
     }
   };
 }
