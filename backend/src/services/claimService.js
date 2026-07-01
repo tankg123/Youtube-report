@@ -135,7 +135,12 @@ function getClaimPolicy(rawClaim) {
 }
 
 function isInactiveClaim(claim) {
-  return String(claim?.status || "").toLowerCase() === "inactive";
+  const status = String(claim?.status || "").toLowerCase();
+  return status === "inactive" || status === "released";
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isOwnedCmsClaim(rawClaim) {
@@ -419,28 +424,35 @@ async function releaseClaim({ accountId, claimId }) {
   if (!accountId || !claimId) throw new Error("Missing CMS account or claim ID.");
 
   const { accessToken, account } = await getFreshAccessTokenForAccount(accountId);
+  const requestConfig = {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { onBehalfOfContentOwner: account.cms_id },
+    timeout: 60000
+  };
   let response;
 
   try {
     response = await axios.delete(
       `${CONTENT_ID_API_BASE}/claims/${encodeURIComponent(claimId)}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        params: { onBehalfOfContentOwner: account.cms_id },
-        timeout: 60000
-      }
+      requestConfig
     );
   } catch (error) {
     if (error.response?.status !== 404) throw error;
-    response = await axios.post(
-      `${CONTENT_ID_API_BASE}/claims/${encodeURIComponent(claimId)}/release`,
-      {},
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        params: { onBehalfOfContentOwner: account.cms_id },
-        timeout: 60000
-      }
-    );
+    try {
+      response = await axios.post(
+        `${CONTENT_ID_API_BASE}/claims/${encodeURIComponent(claimId)}/release`,
+        {},
+        requestConfig
+      );
+    } catch (fallbackError) {
+      if (fallbackError.response?.status !== 404) throw fallbackError;
+      return {
+        id: claimId,
+        accountId,
+        cmsName: account.cms_name,
+        status: "inactive"
+      };
+    }
   }
 
   if (!response.data || !response.data.id) {
@@ -453,6 +465,29 @@ async function releaseClaim({ accountId, claimId }) {
   }
 
   return normalizeClaim(response.data, account, response.data.videoId || null);
+}
+
+async function verifyReleasedItemsWithRetry(items) {
+  let lookup = {
+    claimsByKey: new Map(),
+    erroredGroupKeys: new Set(),
+    errors: []
+  };
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (attempt > 0) await wait(3000);
+    lookup = await listClaimsForReleaseItems(items);
+
+    const hasPendingActiveClaim = items.some((item) => {
+      if (lookup.erroredGroupKeys.has(releaseVideoGroupKey(item))) return false;
+      const currentClaim = lookup.claimsByKey.get(claimReleaseKey(item));
+      return currentClaim && !isInactiveClaim(currentClaim);
+    });
+
+    if (!hasPendingActiveClaim) return lookup;
+  }
+
+  return lookup;
 }
 
 function normalizeReleaseItems(releases) {
@@ -540,13 +575,14 @@ async function releaseClaims({ releases, user }) {
 
       const released = await releaseClaim({ accountId: item.accountId, claimId: item.claimId });
       results.push({
-        ok: false,
+        ok: true,
         releaseRequested: true,
+        pendingVerification: true,
         accountId: item.accountId,
         claimId: item.claimId,
         claim: released,
         verified: false,
-        message: "Release requested. Waiting for verification with claims.list."
+        message: "Release request accepted. Waiting for Google status update."
       });
     } catch (error) {
       results.push({ ok: false, accountId: item.accountId, claimId: item.claimId, message: googleErrorMessage(error) });
@@ -557,15 +593,19 @@ async function releaseClaims({ releases, user }) {
     result.releaseRequested && result.accountId === item.accountId && result.claimId === item.claimId
   )));
   if (releasedItemsWithVideoId.length) {
-    const lookup = await listClaimsForReleaseItems(releasedItemsWithVideoId);
+    const lookup = await verifyReleasedItemsWithRetry(releasedItemsWithVideoId);
     const claimsAfterRelease = lookup.claimsByKey;
     results.forEach((result) => {
       const originalItem = releasedItemsWithVideoId.find((item) => item.accountId === result.accountId && item.claimId === result.claimId);
       if (!originalItem) return;
       if (lookup.erroredGroupKeys.has(releaseVideoGroupKey(originalItem))) {
-        result.ok = false;
+        result.ok = true;
+        result.pendingVerification = true;
         result.verified = false;
-        result.message = "Release was requested, but claims.list verification failed. Please search again before treating this claim as released.";
+        const lookupError = lookup.errors.find((item) => (
+          item.accountId === originalItem.accountId && item.videoId === originalItem.videoId
+        ));
+        result.message = `Release request was accepted, but claims.list verification failed${lookupError?.message ? `: ${lookupError.message}` : ""}. Search again in a moment to see the current Google status.`;
         return;
       }
       const currentClaim = claimsAfterRelease.get(claimReleaseKey(originalItem));
@@ -573,21 +613,30 @@ async function releaseClaims({ releases, user }) {
       if (verified) {
         result.ok = true;
         result.verified = true;
+        result.pendingVerification = false;
         result.claim = currentClaim || { id: result.claimId, status: "inactive" };
-        if (!result.message) result.message = "Release status verified with claims.list.";
+        result.message = "Release status verified with claims.list.";
       } else {
-        result.ok = false;
+        result.ok = true;
+        result.pendingVerification = true;
         result.verified = false;
         result.claim = currentClaim;
-        result.message = "Release request completed, but Google still reports this claim as active.";
+        result.message = `Release request accepted, but Google still reports this claim as ${currentClaim?.status || "active"}. Search again in a moment to see the latest Google status.`;
       }
     });
   }
 
+  const successCount = results.filter((item) => item.ok).length;
+  const verifiedCount = results.filter((item) => item.ok && item.verified).length;
+  const pendingCount = results.filter((item) => item.ok && !item.verified).length;
+  const failedCount = results.filter((item) => !item.ok).length;
+
   return {
     results,
-    successCount: results.filter((item) => item.ok && item.verified).length,
-    failedCount: results.filter((item) => !(item.ok && item.verified)).length
+    successCount,
+    verifiedCount,
+    pendingCount,
+    failedCount
   };
 }
 

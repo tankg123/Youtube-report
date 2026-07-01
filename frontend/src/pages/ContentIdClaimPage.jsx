@@ -186,15 +186,30 @@ export default function ContentIdClaimPage() {
       const data = await releaseContentIdClaims(selectedReleases);
       applyReleaseResults(data.results || []);
       setSelectedClaims({});
-      const success = data.successCount || 0;
-      const failed = data.failedCount || 0;
-      const failedDetails = failed
-        ? ` ${failed} failed or not verified. Search again to see the current Google status.`
-        : "";
-      if (!success && failed) {
-        setError(`No claim was verified as released.${failedDetails}`);
-      } else {
-        setMessage(`Released ${success} verified claim(s).${failedDetails}`);
+      const releaseResults = data.results || [];
+      const accepted = data.successCount ?? releaseResults.filter((item) => item.ok).length;
+      const verified = data.verifiedCount ?? releaseResults.filter((item) => item.ok && item.verified).length;
+      const pending = data.pendingCount ?? releaseResults.filter((item) => item.ok && !item.verified).length;
+      const failed = data.failedCount ?? releaseResults.filter((item) => !item.ok).length;
+      const summary = [
+        verified ? `${verified} verified` : "",
+        pending ? `${pending} pending Google status update` : "",
+        failed ? `${failed} failed` : ""
+      ].filter(Boolean).join(", ");
+
+      if (accepted) {
+        setMessage(`Release requested for ${accepted} claim(s).${summary ? ` ${summary}.` : ""} Search again in a moment to refresh Google status.`);
+      }
+      if (failed) {
+        const failedMessages = releaseResults
+          .filter((item) => !item.ok && item.message)
+          .slice(0, 3)
+          .map((item) => item.message)
+          .join(" ");
+        setError(`Release failed for ${failed} claim(s).${failedMessages ? ` ${failedMessages}` : ""}`);
+      }
+      if (!accepted && !failed) {
+        setMessage("No release result was returned. Search again to see the current Google status.");
       }
     } catch (err) {
       setError(err.response?.data?.message || err.message);
