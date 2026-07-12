@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import api from "../api/api";
+import { applyAccentPalette, DEFAULT_ACCENT_ID } from "../theme/accentPalettes";
 
 const SystemSettingsContext = createContext(null);
 
@@ -10,7 +11,8 @@ export const defaultSystemSettings = {
   logo_data_url: "",
   web_title: "ANS Network",
   favicon_data_url: "",
-  export_template_language: "vi"
+  export_template_language: "vi",
+  ui_accent: DEFAULT_ACCENT_ID
 };
 
 function ensureFaviconLink() {
@@ -44,6 +46,7 @@ export function SystemSettingsProvider({ children }) {
 
   useEffect(() => {
     document.title = settings.web_title || settings.brand_name || defaultSystemSettings.web_title;
+    applyAccentPalette(settings.ui_accent);
     if (settings.favicon_data_url) {
       ensureFaviconLink().href = settings.favicon_data_url;
     }

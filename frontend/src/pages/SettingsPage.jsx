@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { ImageUp, Loader2, MonitorCog, Save, Upload } from "lucide-react";
+import { Check, ImageUp, Loader2, MonitorCog, Palette, Save, Sparkles, Upload } from "lucide-react";
 import api from "../api/api";
 import { useSystemSettings } from "../context/SystemSettingsContext";
 import { useI18n } from "../context/I18nContext";
+import { ACCENT_PALETTES, DEFAULT_ACCENT_ID, getAccentPalette } from "../theme/accentPalettes";
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -20,6 +21,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const useUploadedLogo = form.logo_mode === "upload" && form.logo_data_url;
+  const selectedAccent = getAccentPalette(form.ui_accent);
 
   useEffect(() => {
     setForm(settings);
@@ -48,10 +50,10 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-4 lg:p-8 space-y-6">
-      <section className="rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-5 border-b border-slate-200 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center">
+    <div className="settings-page page-stage p-4 lg:p-8 space-y-6">
+      <section className="surface-3d rounded-3xl bg-white border border-slate-200 overflow-hidden">
+        <div className="surface-3d-header px-6 py-5 border-b border-slate-200 flex items-center gap-3">
+          <div className="ui-primary icon-cube w-11 h-11 rounded-2xl text-white flex items-center justify-center">
             <MonitorCog size={22} />
           </div>
           <div>
@@ -68,7 +70,7 @@ export default function SettingsPage() {
           )}
 
           <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-6">
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-center">
+            <div className="surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 text-center">
               <div
                 className="mx-auto w-32 h-32 rounded-full flex items-center justify-center overflow-hidden shadow-lg"
                 style={{ backgroundColor: useUploadedLogo ? "transparent" : "#2f8ccf" }}
@@ -127,6 +129,74 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          <section className="theme-picker surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="ui-soft flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl">
+                  <Palette size={21} />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-black text-slate-950">Primary interface color</h2>
+                    <span className="ui-soft rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider">System wide</span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    Choose the accent used for navigation, primary actions and focus states. Light green is the default.
+                  </p>
+                </div>
+              </div>
+
+              <div
+                className="theme-live-preview"
+                style={{
+                  "--preview-primary": selectedAccent.primary,
+                  "--preview-soft": selectedAccent.soft,
+                  "--preview-border": selectedAccent.border
+                }}
+                aria-label={`${selectedAccent.label} preview`}
+              >
+                <Sparkles size={16} />
+                Live preview
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" aria-label="Primary interface color">
+              {ACCENT_PALETTES.map((palette) => {
+                const selected = (form.ui_accent || DEFAULT_ACCENT_ID) === palette.id;
+                return (
+                  <button
+                    key={palette.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setForm({ ...form, ui_accent: palette.id })}
+                    className={`theme-swatch-card ${selected ? "is-selected" : ""}`}
+                    style={{
+                      "--swatch": palette.swatch,
+                      "--swatch-soft": palette.soft,
+                      "--swatch-border": palette.border,
+                      "--swatch-ink": palette.ink
+                    }}
+                  >
+                    <span className="theme-swatch-orb" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block truncate text-sm font-black text-slate-900">{palette.label}</span>
+                      <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">{palette.description}</span>
+                    </span>
+                    {palette.id === DEFAULT_ACCENT_ID && !selected && (
+                      <span className="rounded-full bg-white/80 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-slate-500">Default</span>
+                    )}
+                    {selected && (
+                      <span className="theme-swatch-check" aria-label="Selected">
+                        <Check size={14} strokeWidth={3} />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 border-t border-slate-200 pt-6">
             <label className="block">
               <span className="text-sm font-black text-slate-700">Website title</span>
@@ -170,7 +240,7 @@ export default function SettingsPage() {
           <div className="flex justify-end border-t border-slate-200 pt-6">
             <button
               disabled={saving}
-              className="rounded-2xl bg-blue-600 px-6 py-3 font-black text-white flex items-center gap-2 disabled:opacity-60"
+              className="ui-primary btn-3d rounded-2xl px-6 py-3 font-black text-white flex items-center gap-2 disabled:opacity-60"
             >
               {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
               Save settings

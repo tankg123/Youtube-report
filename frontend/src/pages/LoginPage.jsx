@@ -74,7 +74,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f3f6fb] flex items-center justify-center p-5">
+    <div className="auth-page-3d min-h-screen bg-[#f3f6fb] flex items-center justify-center p-5">
       <div className="w-full max-w-[1100px] grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[32px] shadow-2xl overflow-hidden border border-slate-200">
         <div className="hidden lg:flex bg-[#0f172a] text-white p-12 flex-col justify-center">
           <div>

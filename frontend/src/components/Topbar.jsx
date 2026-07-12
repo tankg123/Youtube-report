@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, Eye, EyeOff, FileAudio, FileSignature, FileSpreadsheet, FileVideo, Home, Landmark, Languages, LockKeyhole, LogOut, Mail, Menu, Moon, Network, PackageSearch, Percent, ReceiptText, Save, Settings, ShieldCheck, Sun, Tags, UserRound, Users, UsersRound, Video, WalletCards, X } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, Eye, EyeOff, FileAudio, FileSignature, FileSpreadsheet, FileVideo, Home, Landmark, LockKeyhole, LogOut, Mail, Menu, Moon, Network, PackageSearch, Percent, ReceiptText, Save, Settings, ShieldCheck, Sun, Tags, UserRound, Users, UsersRound, Video, X } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
@@ -75,7 +75,7 @@ export default function Topbar() {
       title: "Channel Management",
       show: canViewChannelManagement,
       items: [
-        { name: "Channel Management", path: "/channel-management", icon: Video },
+        { name: "Overview", path: "/channel-management", icon: Video },
         { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
         { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
       ]
@@ -270,7 +270,7 @@ export default function Topbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 h-14 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-5 flex items-center justify-between">
+      <header className="app-topbar sticky top-0 z-40 h-14 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-5 flex items-center justify-between">
         <div className="lg:hidden flex min-w-0 items-center gap-3">
           <div className="w-9 h-9 shrink-0 rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden">
             <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className={useUploadedLogo ? "h-full w-full object-cover" : "w-6 h-6 object-contain"} />
@@ -283,7 +283,66 @@ export default function Topbar() {
 
         <div className="hidden lg:block" />
 
-        <div className="relative flex items-center gap-2">
+        <div className="relative flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:hidden" aria-label="Quick display preferences">
+            <button
+              type="button"
+              onClick={() => setLanguage(language === "en" ? "vi" : "en")}
+              className="flex h-9 min-w-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-black text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-600 active:translate-y-px"
+              aria-label={`Current language is ${language === "vi" ? "Vietnamese" : "English"}. Switch to ${language === "vi" ? "English" : "Vietnamese"}`}
+              aria-pressed={language === "vi"}
+              title={`Switch to ${language === "vi" ? "English" : "Vietnamese"}`}
+            >
+              {language === "vi" ? "VN" : "EN"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-600 active:translate-y-px"
+              aria-label={`Current theme is ${theme}. Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              aria-pressed={theme === "dark"}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            >
+              {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+            </button>
+          </div>
+
+          <div className="hidden items-center gap-2 sm:flex">
+            <div className="flex items-center rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm" role="group" aria-label="Language">
+              <button
+                type="button"
+                onClick={() => setLanguage("en")}
+                className={`flex h-7 min-w-8 items-center justify-center rounded-[9px] px-2 text-[11px] font-black transition active:translate-y-px ${language === "en" ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+                aria-label="Use English"
+                aria-pressed={language === "en"}
+                title="English"
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                onClick={() => setLanguage("vi")}
+                className={`flex h-7 min-w-8 items-center justify-center rounded-[9px] px-2 text-[11px] font-black transition active:translate-y-px ${language === "vi" ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+                aria-label="Use Vietnamese"
+                aria-pressed={language === "vi"}
+                title="Vietnamese"
+              >
+                VN
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-600 active:translate-y-px"
+              aria-label={`Current theme is ${theme}. Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              aria-pressed={theme === "dark"}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            >
+              {theme === "dark" ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -358,36 +417,6 @@ export default function Topbar() {
               <div className="p-4 border-b border-slate-100">
                 <p className="font-black text-slate-900">{user?.full_name}</p>
                 <p className="text-sm text-slate-500 truncate">{user?.email}</p>
-              </div>
-              <div className="p-3 border-b border-slate-100">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-500 mb-2">
-                  <Languages size={14} /> Language
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setLanguage("en")} className={`rounded-xl px-3 py-2 text-xs font-black ${language === "en" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>EN</button>
-                  <button type="button" onClick={() => setLanguage("vi")} className={`rounded-xl px-3 py-2 text-xs font-black ${language === "vi" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>VI</button>
-                </div>
-              </div>
-              <div className="p-3 border-b border-slate-100">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-500 mb-2">
-                  <Sun size={14} /> Theme
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTheme("light")}
-                    className={`rounded-xl px-3 py-2 text-xs font-black flex items-center justify-center gap-1 ${theme === "light" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}
-                  >
-                    <Sun size={13} /> Light
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTheme("dark")}
-                    className={`rounded-xl px-3 py-2 text-xs font-black flex items-center justify-center gap-1 ${theme === "dark" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}
-                  >
-                    <Moon size={13} /> Dark
-                  </button>
-                </div>
               </div>
               <button type="button" onClick={openSettings} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
                 <Settings size={16} /> Profile settings

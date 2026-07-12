@@ -91,7 +91,7 @@ export default function PartnerRequestPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dcfce7,transparent_30%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_34%)] px-4 py-10">
+    <div className="public-page-3d min-h-screen bg-[radial-gradient(circle_at_top_left,#dcfce7,transparent_30%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_34%)] px-4 py-10">
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 text-center">
           <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-3xl bg-emerald-600 text-white shadow-xl">

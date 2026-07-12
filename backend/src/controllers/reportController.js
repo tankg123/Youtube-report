@@ -1346,6 +1346,7 @@ function dashboardGroupTotals(month = "") {
 
   const partnerMap = new Map();
   const networkPaidMap = new Map();
+  const monthlyTotalsMap = new Map();
   const channelRevenueByNetwork = db.prepare(`
     SELECT COALESCE(n.name, '-') AS network_name, COALESCE(SUM(cr.revenue), 0) AS revenue_usd
     FROM channel_revenues cr
@@ -1363,36 +1364,51 @@ function dashboardGroupTotals(month = "") {
   }
 
   for (const itemMonth of months) {
+    if (!monthlyTotalsMap.has(itemMonth)) {
+      monthlyTotalsMap.set(itemMonth, {
+        month: itemMonth,
+        grouped_revenue_usd: 0,
+        paid_usd: 0,
+        fee_usd: 0,
+        profit_usd: 0
+      });
+    }
+
     for (const group of groups) {
       const detail = groupDetail(group.id, itemMonth);
       if (!detail) continue;
 
       const groupRevenue = Number(detail.summary?.total_revenue_usd || 0);
-      const groupPaid = Number(detail.summary?.payable_usd || detail.summary?.paid_usd || 0);
+      const groupPaid = Number(detail.summary?.payable_usd ?? detail.summary?.paid_usd ?? 0);
       const groupFee = Number(detail.summary?.fee_usd || 0);
 
       revenueUsd += groupRevenue;
       paidUsd += groupPaid;
       feeUsd += groupFee;
 
-      const feeMultiplier = Math.max(0, 1 - Number(detail.summary?.fee_rate || 0) / 100);
+      const monthlyTotal = monthlyTotalsMap.get(itemMonth);
+      monthlyTotal.grouped_revenue_usd += groupRevenue;
+      monthlyTotal.paid_usd += groupPaid;
+      monthlyTotal.fee_usd += groupFee;
+      monthlyTotal.profit_usd = monthlyTotal.grouped_revenue_usd - monthlyTotal.paid_usd;
+
+      const feeMultiplier = 1 - Number(detail.summary?.fee_rate || 0) / 100;
       for (const channel of detail.channels || []) {
         const channelShareUsd = Number(channel.share_amount || 0);
-        if (!channel.channel_id || channelShareUsd <= 0) continue;
+        const appliedShareRate = Number(channel.applied_share || 0);
+        if (!channel.channel_id) continue;
 
         const revenueRows = channelRevenueByNetwork.all(itemMonth, channel.channel_id)
           .map((row) => ({
             network_name: row.network_name || "-",
             revenue_usd: Number(row.revenue_usd || 0)
           }))
-          .filter((row) => row.revenue_usd > 0);
-        const channelRevenueTotal = revenueRows.reduce((sum, row) => sum + row.revenue_usd, 0);
-
-        if (channelRevenueTotal > 0) {
+          .filter((row) => Math.abs(row.revenue_usd) > 0.0000001);
+        if (revenueRows.length) {
           for (const row of revenueRows) {
-            addNetworkPaid(row.network_name, channelShareUsd * (row.revenue_usd / channelRevenueTotal) * feeMultiplier);
+            addNetworkPaid(row.network_name, row.revenue_usd * appliedShareRate / 100 * feeMultiplier);
           }
-        } else {
+        } else if (Math.abs(channelShareUsd) > 0.0000001) {
           addNetworkPaid(channel.network_name || "-", channelShareUsd * feeMultiplier);
         }
       }
@@ -1427,12 +1443,16 @@ function dashboardGroupTotals(month = "") {
     }
   }
 
-  const topPartners = [...partnerMap.values()]
+  const partnerRows = [...partnerMap.values()]
     .map((partner) => ({
       ...partner,
       channels: partner.channels.size
-    }))
+    }));
+  const topPartners = [...partnerRows]
     .sort((a, b) => b.revenue_usd - a.revenue_usd)
+    .slice(0, 10);
+  const topPartnersByPayable = [...partnerRows]
+    .sort((a, b) => b.paid_usd - a.paid_usd)
     .slice(0, 10);
 
   return {
@@ -1441,7 +1461,9 @@ function dashboardGroupTotals(month = "") {
     total_fee_usd: feeUsd,
     total_profit_usd: revenueUsd - paidUsd,
     network_paid: [...networkPaidMap.entries()].map(([network_name, paid_usd]) => ({ network_name, paid_usd })),
-    top_partners: topPartners
+    monthly_totals: [...monthlyTotalsMap.values()],
+    top_partners: topPartners,
+    top_partners_by_payable: topPartnersByPayable
   };
 }
 
@@ -1491,20 +1513,173 @@ function dashboardNetworkBreakdown(month = "", groupTotals = {}) {
     .sort((a, b) => b.revenue_usd - a.revenue_usd);
 }
 
+function dashboardRevenueTrend(endMonth, limit = 12) {
+  return db.prepare(`
+    SELECT
+      month,
+      COALESCE(SUM(revenue), 0) AS revenue_usd,
+      COUNT(*) AS revenue_rows,
+      COUNT(DISTINCT channel_id) AS revenue_channels
+    FROM channel_revenues
+    WHERE month <= ?
+    GROUP BY month
+    ORDER BY month DESC
+    LIMIT ?
+  `).all(endMonth, limit).reverse().map((row) => ({
+    month: row.month,
+    revenue_usd: Number(row.revenue_usd || 0),
+    revenue_rows: Number(row.revenue_rows || 0),
+    revenue_channels: Number(row.revenue_channels || 0)
+  }));
+}
+
+function dashboardImportSummary(month) {
+  const importHistory = db.prepare(`
+    SELECT
+      ri.id,
+      ri.network_id,
+      COALESCE(n.name, '-') AS network_name,
+      ri.file_name,
+      ri.channel_count,
+      ri.total_revenue,
+      ri.missing_channels,
+      ri.imported_at
+    FROM report_imports ri
+    LEFT JOIN networks n ON n.id = ri.network_id
+    WHERE ri.month = ?
+    ORDER BY ri.imported_at DESC, ri.id DESC
+  `).all(month);
+  const imports = db.prepare(`
+    SELECT
+      ri.id,
+      ri.network_id,
+      COALESCE(n.name, '-') AS network_name,
+      ri.file_name,
+      ri.channel_count,
+      ri.total_revenue,
+      ri.missing_channels,
+      ri.imported_at
+    FROM report_imports ri
+    LEFT JOIN networks n ON n.id = ri.network_id
+    WHERE ri.month = ?
+      AND ri.id = (
+        SELECT newer.id
+        FROM report_imports newer
+        WHERE newer.month = ri.month AND newer.network_id = ri.network_id
+        ORDER BY newer.imported_at DESC, newer.id DESC
+        LIMIT 1
+      )
+    ORDER BY ri.imported_at DESC, ri.id DESC
+  `).all(month);
+  const coverage = db.prepare(`
+    SELECT
+      COUNT(*) AS revenue_rows,
+      COUNT(DISTINCT cr.channel_id) AS revenue_channels,
+      COUNT(DISTINCT CASE WHEN gc.channel_id IS NOT NULL THEN cr.channel_id END) AS grouped_channels,
+      COUNT(DISTINCT cr.network_id) AS revenue_networks,
+      COALESCE(SUM(CASE WHEN gc.channel_id IS NOT NULL THEN cr.revenue ELSE 0 END), 0) AS grouped_revenue_usd,
+      COALESCE(SUM(CASE WHEN gc.channel_id IS NULL THEN cr.revenue ELSE 0 END), 0) AS ungrouped_revenue_usd
+    FROM channel_revenues cr
+    LEFT JOIN (SELECT DISTINCT channel_id FROM group_channels) gc ON gc.channel_id = cr.channel_id
+    WHERE cr.month = ?
+  `).get(month);
+  const missingChannelIds = new Set();
+
+  for (const item of imports) {
+    try {
+      for (const channelId of JSON.parse(item.missing_channels || "[]")) {
+        if (channelId) missingChannelIds.add(String(channelId));
+      }
+    } catch {
+      // Keep dashboard analytics available even if an old import stored malformed JSON.
+    }
+  }
+
+  return {
+    imports: imports.length,
+    import_history: importHistory.length,
+    imported_networks: new Set(imports.map((item) => Number(item.network_id))).size,
+    total_networks: Number(db.prepare("SELECT COUNT(*) AS total FROM networks").get()?.total || 0),
+    imported_channels: imports.reduce((sum, item) => sum + Number(item.channel_count || 0), 0),
+    imported_revenue_usd: imports.reduce((sum, item) => sum + Number(item.total_revenue || 0), 0),
+    missing_channels: missingChannelIds.size,
+    latest_imported_at: importHistory[0]?.imported_at || "",
+    revenue_rows: Number(coverage?.revenue_rows || 0),
+    revenue_channels: Number(coverage?.revenue_channels || 0),
+    grouped_channels: Number(coverage?.grouped_channels || 0),
+    revenue_networks: Number(coverage?.revenue_networks || 0),
+    grouped_revenue_usd: Number(coverage?.grouped_revenue_usd || 0),
+    ungrouped_revenue_usd: Number(coverage?.ungrouped_revenue_usd || 0),
+    recent_imports: importHistory.slice(0, 6).map((item) => {
+      let missingCount = 0;
+      try {
+        missingCount = JSON.parse(item.missing_channels || "[]").length;
+      } catch {
+        missingCount = 0;
+      }
+      return {
+        id: item.id,
+        network_name: item.network_name || "-",
+        file_name: item.file_name || "",
+        channel_count: Number(item.channel_count || 0),
+        total_revenue_usd: Number(item.total_revenue || 0),
+        missing_channels: missingCount,
+        imported_at: item.imported_at || ""
+      };
+    })
+  };
+}
+
 exports.getDashboard = (req, res) => {
   try {
-    const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+    const availableMonths = db.prepare(`
+      SELECT DISTINCT month
+      FROM channel_revenues
+      WHERE month IS NOT NULL AND month != ''
+      ORDER BY month DESC
+      LIMIT 36
+    `).all().map((row) => row.month);
+    const requestedMonth = String(req.query.month || "").trim();
+    const month = /^\d{4}-\d{2}$/.test(requestedMonth)
+      ? requestedMonth
+      : availableMonths[0] || new Date().toISOString().slice(0, 7);
+    const previousMonth = availableMonths.find((item) => item < month) || "";
 
     const allRevenue = db.prepare("SELECT COALESCE(SUM(revenue), 0) AS total FROM channel_revenues").get();
     const monthRevenue = db.prepare("SELECT COALESCE(SUM(revenue), 0) AS total FROM channel_revenues WHERE month = ?").get(month);
     const fullGroupTotals = dashboardGroupTotals("");
     const monthGroupTotals = dashboardGroupTotals(month);
+    const groupMonthlyTotals = new Map((fullGroupTotals.monthly_totals || []).map((item) => [item.month, item]));
+    const revenueTrend = dashboardRevenueTrend(month);
+    const trend = revenueTrend.map((item) => {
+      const groupTotal = groupMonthlyTotals.get(item.month) || {};
+      const paidUsd = Number(groupTotal.paid_usd || 0);
+      return {
+        ...item,
+        paid_usd: paidUsd,
+        fee_usd: Number(groupTotal.fee_usd || 0),
+        profit_usd: Number(item.revenue_usd || 0) - paidUsd
+      };
+    });
+    const previousRevenue = previousMonth
+      ? db.prepare("SELECT COALESCE(SUM(revenue), 0) AS total FROM channel_revenues WHERE month = ?").get(previousMonth)
+      : null;
+    const previousGroupTotals = groupMonthlyTotals.get(previousMonth) || {};
+    const previousPaidUsd = Number(previousGroupTotals.paid_usd || 0);
 
     const channelStats = db.prepare(`
       SELECT
         COUNT(*) AS total_channels,
         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS live_channels,
         SUM(CASE WHEN status != 'active' OR status_error IS NOT NULL THEN 1 ELSE 0 END) AS error_channels
+      FROM channels
+    `).get();
+    const channelHealth = db.prepare(`
+      SELECT
+        SUM(CASE WHEN status = 'active' AND (status_error IS NULL OR TRIM(status_error) = '') THEN 1 ELSE 0 END) AS healthy_channels,
+        SUM(CASE WHEN status_error IS NOT NULL AND TRIM(status_error) != '' THEN 1 ELSE 0 END) AS error_channels,
+        SUM(CASE WHEN status IS NOT NULL AND TRIM(status) != '' AND status != 'active' AND (status_error IS NULL OR TRIM(status_error) = '') THEN 1 ELSE 0 END) AS inactive_channels,
+        SUM(CASE WHEN (status IS NULL OR TRIM(status) = '') AND (status_error IS NULL OR TRIM(status_error) = '') THEN 1 ELSE 0 END) AS unknown_channels
       FROM channels
     `).get();
 
@@ -1530,6 +1705,9 @@ exports.getDashboard = (req, res) => {
       success: true,
       data: {
         month,
+        latest_month: availableMonths[0] || month,
+        available_months: availableMonths,
+        previous_month: previousMonth,
         full: {
           total_revenue_usd: Number(allRevenue?.total || 0),
           total_paid_usd: fullGroupTotals.total_paid_usd,
@@ -1542,13 +1720,29 @@ exports.getDashboard = (req, res) => {
           total_profit_usd: Number(monthRevenue?.total || 0) - monthGroupTotals.total_paid_usd,
           total_fee_usd: monthGroupTotals.total_fee_usd
         },
+        previous_month_summary: {
+          month: previousMonth,
+          total_revenue_usd: Number(previousRevenue?.total || 0),
+          total_paid_usd: previousPaidUsd,
+          total_profit_usd: Number(previousRevenue?.total || 0) - previousPaidUsd,
+          total_fee_usd: Number(previousGroupTotals.fee_usd || 0)
+        },
+        trend,
+        import_summary: dashboardImportSummary(month),
         counts: {
           total_partners: Number(totalPartners?.total || 0),
           total_channels: Number(channelStats?.total_channels || 0),
           live_channels: Number(channelStats?.live_channels || 0),
           error_channels: Number(channelStats?.error_channels || 0)
         },
+        channel_health: {
+          healthy_channels: Number(channelHealth?.healthy_channels || 0),
+          error_channels: Number(channelHealth?.error_channels || 0),
+          inactive_channels: Number(channelHealth?.inactive_channels || 0),
+          unknown_channels: Number(channelHealth?.unknown_channels || 0)
+        },
         top_partners: monthGroupTotals.top_partners,
+        top_partners_by_payable: monthGroupTotals.top_partners_by_payable,
         top_channels: topChannels.map((channel) => ({
           ...channel,
           revenue_usd: Number(channel.revenue_usd || 0),

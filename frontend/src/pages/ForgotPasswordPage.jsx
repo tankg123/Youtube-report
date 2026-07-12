@@ -68,7 +68,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f3f6fb] flex items-center justify-center p-5">
+    <div className="auth-page-3d min-h-screen bg-[#f3f6fb] flex items-center justify-center p-5">
       <div className="w-full max-w-[620px] rounded-[32px] border border-slate-200 bg-white p-8 shadow-2xl lg:p-10">
         <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-600 text-white shadow-lg shadow-blue-900/20">
           <LockKeyhole size={30} />

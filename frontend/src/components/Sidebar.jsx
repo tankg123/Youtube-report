@@ -70,7 +70,7 @@ export default function Sidebar() {
   }
 
   const channelMenus = [
-    { name: "Channel Management", path: "/channel-management", icon: Video },
+    { name: "Overview", path: "/channel-management", icon: Video },
     { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
     { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
   ];
@@ -122,7 +122,7 @@ export default function Sidebar() {
   return (
     <aside
       className={[
-        "h-screen sticky top-0 hidden lg:flex flex-col overflow-hidden border-r transition-all duration-200",
+        "app-sidebar h-screen sticky top-0 hidden lg:flex flex-col overflow-hidden border-r transition-all duration-200",
         sidebarCollapsed ? "w-[86px] sidebar-collapsed" : "w-[260px]",
         isDark ? "bg-[#0f172a] text-white border-slate-800" : "bg-white text-slate-950 border-slate-200"
       ].join(" ")}

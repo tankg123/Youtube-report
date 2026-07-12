@@ -11,12 +11,12 @@ export async function listContentIdClaimCmsAccounts() {
   }));
 }
 
-export async function searchContentIdClaims(payload) {
-  const response = await api.post("/content-id/claims/search", payload, { timeout: 90000 });
+export async function searchContentIdClaims(payload, { signal } = {}) {
+  const response = await api.post("/content-id/claims/search", payload, { signal, timeout: 90000 });
   return response.data.data;
 }
 
-export async function releaseContentIdClaims(releases) {
-  const response = await api.post("/content-id/claims/release", { releases }, { timeout: 180000 });
+export async function releaseContentIdClaims(releases, { signal } = {}) {
+  const response = await api.post("/content-id/claims/release", { releases }, { signal, timeout: 240000 });
   return response.data.data;
 }

@@ -7,14 +7,20 @@ const DEFAULT_SETTINGS = {
   logo_data_url: "",
   web_title: "ANS Network",
   favicon_data_url: "",
-  export_template_language: "vi"
+  export_template_language: "vi",
+  ui_accent: "mint"
 };
 
+const UI_ACCENTS = new Set(["mint", "orange", "blue", "violet", "rose", "teal"]);
+
 function rowsToSettings(rows) {
-  return rows.reduce((settings, row) => {
-    settings[row.key] = row.value || "";
-    return settings;
+  const settings = rows.reduce((current, row) => {
+    current[row.key] = row.value || "";
+    return current;
   }, { ...DEFAULT_SETTINGS });
+
+  settings.ui_accent = UI_ACCENTS.has(settings.ui_accent) ? settings.ui_accent : DEFAULT_SETTINGS.ui_accent;
+  return settings;
 }
 
 function getSettingsObject() {
@@ -55,6 +61,11 @@ function normalizeSettings(body) {
   if (Object.prototype.hasOwnProperty.call(body, "export_template_language")) {
     const language = String(body.export_template_language || "").trim().toLowerCase();
     next.export_template_language = ["en", "english"].includes(language) ? "en" : "vi";
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "ui_accent")) {
+    const accent = String(body.ui_accent || "").trim().toLowerCase();
+    next.ui_accent = UI_ACCENTS.has(accent) ? accent : DEFAULT_SETTINGS.ui_accent;
   }
 
   return next;

@@ -63,7 +63,7 @@ function LockedPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-64px)] overflow-hidden bg-[radial-gradient(circle_at_top_left,#dcfce7,transparent_32%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_36%)] p-6">
+    <div className="locked-page-3d min-h-[calc(100vh-64px)] overflow-hidden bg-[radial-gradient(circle_at_top_left,#dcfce7,transparent_32%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_36%)] p-6">
       <div className="mx-auto flex min-h-[calc(100vh-112px)] max-w-5xl items-center justify-center">
         <section className="relative w-full overflow-hidden rounded-[36px] border border-white/70 bg-white/90 p-8 text-center shadow-2xl shadow-slate-900/10 backdrop-blur lg:p-12">
           <div className="absolute -left-16 -top-16 h-44 w-44 rounded-full bg-emerald-100 blur-2xl" />
@@ -146,7 +146,7 @@ function MobileNav() {
   const [emailOpen, setEmailOpen] = useState(emailPaths.includes(location.pathname));
 
   const channelMenus = [
-    { name: "Channel Management", path: "/channel-management", icon: Video },
+    { name: "Overview", path: "/channel-management", icon: Video },
     { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
     { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
   ].filter(() => canViewChannelManagement);
@@ -554,11 +554,11 @@ function PrivateLayout() {
   const defaultPath = "/home";
 
   return (
-    <div className="min-h-screen flex bg-[#f3f6fb]">
+    <div className="app-shell min-h-screen flex bg-[#f3f6fb]">
       <ReadOnlyRuntime />
       <Sidebar />
 
-      <main className="flex-1 min-w-0">
+      <main className="app-main flex-1 min-w-0">
         <Topbar />
         <MobileNav />
 
@@ -806,10 +806,10 @@ function HomeRoute() {
   }
 
   return user ? (
-    <div className="min-h-screen flex bg-[#f3f6fb]">
+    <div className="app-shell min-h-screen flex bg-[#f3f6fb]">
       <ReadOnlyRuntime />
       <Sidebar />
-      <main className="flex-1 min-w-0">
+      <main className="app-main flex-1 min-w-0">
         <Topbar />
         <MobileNav />
         <HomePage />
@@ -822,10 +822,11 @@ function AppRoutes() {
   return (
     <>
       <LanguageRuntime />
-    <Routes>
-      <Route path="/partner-request/:token" element={<PartnerRequestPage />} />
-      <Route path="/" element={<HomeRoute />} />
-      <Route path="/home" element={<HomeRoute />} />
+      <div className="app-routes-3d">
+        <Routes>
+          <Route path="/partner-request/:token" element={<PartnerRequestPage />} />
+          <Route path="/" element={<HomeRoute />} />
+          <Route path="/home" element={<HomeRoute />} />
 
       <Route
         path="/login"
@@ -863,8 +864,9 @@ function AppRoutes() {
         }
       />
 
-      <Route path="/*" element={<PrivateLayout />} />
-    </Routes>
+          <Route path="/*" element={<PrivateLayout />} />
+        </Routes>
+      </div>
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Copy, Download, Edit3, Filter, Grid2X2, List, Loader2, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, Unlink, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Copy, Download, Edit3, Eye, Filter, Layers3, List, Loader2, Network, Plus, RefreshCw, Search, Trash2, Unlink, Users, X } from "lucide-react";
 import api from "../api/api";
 import PaginationFooter from "../components/PaginationFooter";
 
@@ -576,70 +576,178 @@ export default function ChannelManagementPage() {
   }, [channels, page, pageSize]);
   const visibleIds = paginatedChannels.map((channel) => channel.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  const overview = useMemo(() => {
+    const summary = channels.reduce((current, channel) => {
+      const status = String(channel.status || "").toLowerCase();
+      const needsAttention = ["error", "unlinked", "pending"].includes(status) || Boolean(channel.status_error);
+      current.active += status === "active" ? 1 : 0;
+      current.needsAttention += needsAttention ? 1 : 0;
+      current.grouped += channelGroupNames(channel).length ? 1 : 0;
+      current.assigned += (channel.network_id || channel.network_name) && (channel.partner_id || channel.partner_name || channel.partner_display_name) ? 1 : 0;
+      current.subscribers += Number(channel.subscriber_count || 0);
+      current.views += Number(channel.view_count || 0);
+      current.videos += Number(channel.video_count || 0);
+      if (channel.network_id || channel.network_name) current.networks.add(String(channel.network_id || channel.network_name));
+      if (channel.partner_id || channel.partner_name || channel.partner_display_name) current.partners.add(String(channel.partner_id || channel.partner_name || channel.partner_display_name));
+      return current;
+    }, {
+      active: 0,
+      needsAttention: 0,
+      grouped: 0,
+      assigned: 0,
+      subscribers: 0,
+      views: 0,
+      videos: 0,
+      networks: new Set(),
+      partners: new Set()
+    });
+
+    const total = channels.length;
+    return {
+      ...summary,
+      total,
+      networkCount: summary.networks.size,
+      partnerCount: summary.partners.size,
+      healthRate: total ? Math.round((summary.active / total) * 100) : 0,
+      groupCoverage: total ? Math.round((summary.grouped / total) * 100) : 0,
+      assignmentCoverage: total ? Math.round((summary.assigned / total) * 100) : 0
+    };
+  }, [channels]);
 
   return (
-    <div className="p-4 lg:p-6">
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+    <div className="channel-management-page page-stage p-4 lg:p-6 space-y-5">
+      <section className="channel-hero surface-3d relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-5 lg:p-7">
+        <div className="channel-hero-orb channel-hero-orb-one" aria-hidden="true" />
+        <div className="channel-hero-orb channel-hero-orb-two" aria-hidden="true" />
+        <div className="relative flex flex-col gap-6 2xl:flex-row 2xl:items-center 2xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="ui-accent-text flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em]">
+              <Layers3 size={16} /> Channel operations
+            </p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 lg:text-4xl">Channel Overview</h1>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500 lg:text-base">
+              Monitor portfolio health, audience scale and assignments from one operational workspace.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="status-chip status-chip-positive"><Check size={14} /> {overview.active} active</span>
+              <span className="status-chip status-chip-warning"><AlertTriangle size={14} /> {overview.needsAttention} need attention</span>
+              <span className="status-chip ui-soft"><Layers3 size={14} /> {overview.groupCoverage}% grouped</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => fetchData()} className="btn-3d flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700">
+              <RefreshCw size={16} /> Refresh
+            </button>
+            <button
+              type="button"
+              onClick={syncManagedChannels}
+              disabled={syncing}
+              className="btn-3d flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700 disabled:opacity-60"
+            >
+              {syncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+              Sync info
+            </button>
+            <button
+              type="button"
+              onClick={exportManagedChannels}
+              disabled={exporting}
+              className="btn-3d flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 disabled:opacity-60"
+            >
+              {exporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+              Export{selectedIds.length ? ` (${selectedIds.length})` : ""}
+            </button>
+            <button type="button" onClick={() => setBulkOpen(true)} className="ui-primary btn-3d flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white">
+              <Plus size={16} /> Add channel
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Channel portfolio summary">
+        <article className="kpi-3d">
+          <div className="kpi-icon ui-primary"><Network size={20} /></div>
+          <div>
+            <p className="kpi-label">Managed channels</p>
+            <p className="kpi-value">{formatCompact(overview.total)}</p>
+            <p className="kpi-meta">Across {overview.networkCount} networks</p>
+          </div>
+        </article>
+        <article className="kpi-3d">
+          <div className="kpi-icon kpi-icon-success"><Check size={20} /></div>
+          <div>
+            <p className="kpi-label">Active portfolio</p>
+            <p className="kpi-value">{formatCompact(overview.active)}</p>
+            <p className="kpi-meta">{overview.healthRate}% channel health</p>
+          </div>
+        </article>
+        <article className="kpi-3d">
+          <div className="kpi-icon kpi-icon-audience"><Users size={20} /></div>
+          <div>
+            <p className="kpi-label">Total audience</p>
+            <p className="kpi-value">{formatCompact(overview.subscribers)}</p>
+            <p className="kpi-meta">{formatCompact(overview.views)} lifetime views</p>
+          </div>
+        </article>
+        <article className="kpi-3d">
+          <div className="kpi-icon kpi-icon-groups"><Layers3 size={20} /></div>
+          <div>
+            <p className="kpi-label">Group coverage</p>
+            <p className="kpi-value">{overview.groupCoverage}%</p>
+            <p className="kpi-meta">{overview.grouped} of {overview.total} channels</p>
+          </div>
+        </article>
+      </section>
+
+      <section className="operation-strip surface-3d-soft grid grid-cols-2 gap-3 rounded-3xl border border-slate-200 bg-white p-4 md:grid-cols-4">
+        <div><span><Eye size={15} /> Views</span><strong>{formatCompact(overview.views)}</strong></div>
+        <div><span><List size={15} /> Videos</span><strong>{formatCompact(overview.videos)}</strong></div>
+        <div><span><Users size={15} /> Partners</span><strong>{overview.partnerCount}</strong></div>
+        <div><span><Network size={15} /> Assigned</span><strong>{overview.assignmentCoverage}%</strong></div>
+      </section>
+
+      <div className="surface-3d bg-white border border-slate-200 rounded-[28px] overflow-hidden">
         <div className="p-5 border-b border-slate-100 flex flex-col gap-4">
-          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <h1 className="text-2xl font-black text-slate-900">Channel Management</h1>
-              <p className="text-sm text-slate-500 mt-1">Manage <b>{channels.length}</b> channels</p>
+              <p className="ui-accent-text text-xs font-black uppercase tracking-[0.16em]">Overview workspace</p>
+              <h2 className="mt-1 text-xl font-black text-slate-950">Channel directory</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">Metrics reflect the current search and filters.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => fetchData()} className="px-4 py-2 rounded-xl border border-slate-200 bg-white font-bold text-sm flex items-center gap-2"><RefreshCw size={16} /> Refresh</button>
-              <button
-                onClick={syncManagedChannels}
-                disabled={syncing}
-                className="px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 font-bold text-sm flex items-center gap-2 disabled:opacity-60"
-              >
-                {syncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-                Sync Channel Info
-              </button>
-              <button
-                type="button"
-                onClick={exportManagedChannels}
-                disabled={exporting}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white font-bold text-sm flex items-center gap-2 disabled:opacity-60"
-              >
-                {exporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
-                Export{selectedIds.length ? ` (${selectedIds.length})` : ""}
-              </button>
               <button
                 type="button"
                 onClick={toggleAllChannels}
                 disabled={!channels.length}
-                className="px-4 py-2 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 font-bold text-sm flex items-center gap-2 disabled:opacity-50"
+                className="btn-3d ui-soft flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-black disabled:opacity-50"
               >
                 <Check size={16} />
                 {selectedIds.length === channels.length && channels.length ? "Clear all" : "Select all"}
               </button>
-              <button onClick={() => setBulkOpen(true)} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center gap-2"><Plus size={16} /> Add Channel</button>
               <button
                 type="button"
                 onClick={() => setFiltersOpen((open) => !open)}
-                className={`px-4 py-2 rounded-xl border font-bold text-sm flex items-center gap-2 ${filtersOpen ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white"}`}
+                className={`btn-3d flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-black ${filtersOpen ? "ui-soft" : "border-slate-200 bg-white text-slate-700"}`}
               >
                 <Filter size={16} /> Filters
               </button>
             </div>
           </div>
 
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <label className="w-full md:w-[520px] flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <Search size={17} className="text-slate-400" />
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <label className="search-well flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:max-w-[620px]">
+              <Search size={18} className="mt-0.5 shrink-0 text-slate-400" />
               <textarea
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 placeholder={"Search name / channel id / custom url...\nPaste multiple channels, one per line"}
                 rows={keyword.includes("\n") ? 4 : 1}
-                className="w-full resize-none bg-transparent outline-none text-sm leading-5"
+                className="w-full resize-none bg-transparent text-sm leading-5 outline-none"
               />
             </label>
-            <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              <button className="w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center"><List size={17} /></button>
-              <button className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500"><Grid2X2 size={17} /></button>
-              <button className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500"><SlidersHorizontal size={17} /></button>
+            <div className="flex items-center gap-2 self-start rounded-2xl border border-slate-200 bg-slate-50 p-1.5 text-xs font-black text-slate-500 md:self-auto">
+              <span className="ui-primary flex items-center gap-2 rounded-xl px-3 py-2 text-white"><List size={15} /> List view</span>
+              <span className="flex items-center gap-1 px-2"><AlertTriangle size={14} /> {overview.needsAttention}</span>
             </div>
           </div>
 
@@ -673,11 +781,11 @@ export default function ChannelManagementPage() {
           )}
         </div>
 
-        {message && <div className="mx-5 mt-4 rounded-2xl bg-blue-50 border border-blue-100 text-blue-700 px-4 py-3 font-medium">{message}</div>}
+        {message && <div className="ui-soft mx-5 mt-4 rounded-2xl border px-4 py-3 font-bold">{message}</div>}
 
         {selectedIds.length > 0 && (
-          <div className="mx-5 mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <p className="font-black text-blue-700">{selectedIds.length} channels selected</p>
+          <div className="selection-3d sticky top-[4.5rem] z-20 mx-5 mt-4 rounded-2xl border px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <p className="ui-accent-text font-black">{selectedIds.length} channels selected</p>
             <div className="flex flex-wrap gap-2">
               {selectedIds.length < channels.length && (
                 <button
@@ -733,9 +841,9 @@ export default function ChannelManagementPage() {
         {loading ? (
           <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-blue-600" size={34} /></div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+          <div className="channel-table-shell overflow-x-auto">
+            <table className="channel-table w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 uppercase text-xs">
                 <tr>
                   <th className="px-5 py-4 text-left w-10">
                     <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} />
@@ -754,7 +862,7 @@ export default function ChannelManagementPage() {
                   const isUnlinked = channel.status === "unlinked";
                   const groups = channelGroupNames(channel);
                   return (
-                  <tr key={channel.id} className={isUnlinked ? "bg-red-50/70 hover:bg-red-50 outline outline-1 outline-red-200" : "hover:bg-slate-50/60"}>
+                  <tr key={channel.id} className={isUnlinked ? "channel-row bg-red-50/70 hover:bg-red-50 outline outline-1 outline-red-200" : "channel-row hover:bg-slate-50/60"}>
                     <td className="px-5 py-4">
                       <input type="checkbox" checked={selectedIds.includes(channel.id)} onChange={() => toggleSelected(channel.id)} />
                     </td>
@@ -880,6 +988,17 @@ export default function ChannelManagementPage() {
                   </tr>
                   );
                 })}
+                {!paginatedChannels.length && (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-16 text-center">
+                      <div className="ui-soft mx-auto flex h-14 w-14 items-center justify-center rounded-2xl">
+                        <Search size={24} />
+                      </div>
+                      <p className="mt-4 text-base font-black text-slate-900">No channels found</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-500">Try another keyword or clear the active filters.</p>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
             <PaginationFooter

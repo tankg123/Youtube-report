@@ -44,7 +44,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f3f6fb] flex items-center justify-center p-5">
+    <div className="auth-page-3d min-h-screen bg-[#f3f6fb] flex items-center justify-center p-5">
       <div className="w-full max-w-[620px] bg-white rounded-[32px] shadow-2xl border border-slate-200 p-8 lg:p-10">
         <div className="w-14 h-14 rounded-3xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-900/30 mb-6">
           <UserRoundPlus size={30} />

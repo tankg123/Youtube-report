@@ -297,6 +297,7 @@ function normalizeClaim(rawClaim, network, contentOwnerId) {
     Object.keys(policy || {}).length
   );
   const managedBySelectedCms = hasPolicy;
+  const status = String(rawClaim.status || rawClaim.claimStatus || "").toLowerCase();
 
   return {
     id: claimId,
@@ -307,7 +308,7 @@ function normalizeClaim(rawClaim, network, contentOwnerId) {
     asset_label: rawClaim.assetLabel || rawClaim.asset_label || asset.label || asset.customId || "",
     isrc: rawClaim.isrc || asset.isrc || getNestedValue(rawClaim, ["assetMetadata.isrc", "metadata.isrc"]),
     upc: rawClaim.upc || asset.upc || getNestedValue(rawClaim, ["assetMetadata.upc", "metadata.upc"]),
-    status: String(rawClaim.status || rawClaim.claimStatus || "").toLowerCase(),
+    status,
     type: rawClaim.contentType || rawClaim.content_type || rawClaim.type || "",
     policy_id: policy.id || policy.policyId || "",
     policy_name: policy.name || rawClaim.policyName || "",
@@ -320,7 +321,7 @@ function normalizeClaim(rawClaim, network, contentOwnerId) {
     has_policy: hasPolicy,
     managed_by_selected_cms: managedBySelectedCms,
     raw: rawClaim,
-    releasable: Boolean(claimId) && managedBySelectedCms
+    releasable: Boolean(claimId) && managedBySelectedCms && ["active", "pending"].includes(status)
   };
 }
 
@@ -434,7 +435,9 @@ async function enrichClaimsWithAssets(networkId, claims) {
       asset_label: asset?.asset_label || claim.asset_label || "",
       record_label: asset?.record_label || claim.record_label || "",
       asset_lookup_error: asset ? "" : (errors.find((error) => error.asset_id === claim.asset_id)?.message || ""),
-      releasable: Boolean(claim.claim_id) && Boolean(claim.managed_by_selected_cms)
+      releasable: Boolean(claim.claim_id)
+        && Boolean(claim.managed_by_selected_cms)
+        && ["active", "pending"].includes(String(claim.status || "").toLowerCase())
     };
   });
 
@@ -502,20 +505,25 @@ async function releaseClaim(networkId, claimId) {
   const accessToken = await getAccessToken(network);
   const contentOwnerId = String(network.network_code || "").trim();
 
-  let response;
-  try {
-    response = await axios.delete(`${YOUTUBE_PARTNER_API}/claims/${encodeURIComponent(claimId)}`, {
-      params: { onBehalfOfContentOwner: contentOwnerId },
-      headers: { Authorization: `Bearer ${accessToken}` },
+  const response = await axios.patch(
+    `${YOUTUBE_PARTNER_API}/claims/${encodeURIComponent(claimId)}`,
+    { status: "inactive" },
+    {
+      params: {
+        onBehalfOfContentOwner: contentOwnerId,
+        fields: "id,videoId,assetId,status,timeStatusLastModified",
+        prettyPrint: false
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
       timeout: 30000
-    });
-  } catch (error) {
-    if (error.response?.status !== 404) throw error;
-    response = await axios.post(`${YOUTUBE_PARTNER_API}/claims/${encodeURIComponent(claimId)}/release`, {}, {
-      params: { onBehalfOfContentOwner: contentOwnerId },
-      headers: { Authorization: `Bearer ${accessToken}` },
-      timeout: 30000
-    });
+    }
+  );
+
+  if (!response.data?.id || String(response.data.status || "").toLowerCase() !== "inactive") {
+    throw new Error("Google did not confirm the claim as inactive.");
   }
 
   return {

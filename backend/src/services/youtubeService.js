@@ -486,7 +486,8 @@ async function getVideosMetadataFromYoutube(videoIds = []) {
     const response = await youtubeGet(YOUTUBE_VIDEOS_API, {
       params: {
         part: "snippet,contentDetails",
-        id: batch.join(",")
+        id: batch.join(","),
+        fields: "items(id,snippet(title,channelId,channelTitle,publishedAt,thumbnails),contentDetails(duration))"
       },
       timeout: 15000
     }, "videos.list");
