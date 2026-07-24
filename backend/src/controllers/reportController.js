@@ -172,9 +172,10 @@ function managedChannelRowsByIds(channelIds = []) {
   for (const batch of chunkItems(channelIds)) {
     if (!batch.length) continue;
     rows.push(...db.prepare(`
-      SELECT mc.*, rs.share_rate AS revenue_share_rate
+      SELECT mc.*, rs.share_rate AS revenue_share_rate, crs.share_rate AS colab_revenue_share_rate
       FROM managed_channels mc
       LEFT JOIN revenue_sharings rs ON rs.id = mc.revenue_sharing_id
+      LEFT JOIN revenue_sharings crs ON crs.id = mc.colab_revenue_sharing_id
       WHERE mc.channel_id IN (${batch.map(() => "?").join(",")})
     `).all(...batch));
   }
@@ -445,14 +446,19 @@ function groupDefaultShare(groupId, month = "") {
   return tierRate(group.tiers, groupRevenueTotalUsd(groupId, month));
 }
 
-function existingShareForChannel(channelId, month = "", excludeGroupId = null) {
+function existingShareForChannel(channelId, month = "", excludeGroupId = null, ownerType = null) {
   const rows = db.prepare(`
     SELECT gc.group_id, gc.custom_share, gc.custom_share_override, cg.tiers
     FROM group_channels gc
     JOIN channel_groups cg ON cg.id = gc.group_id
     WHERE gc.channel_id = ?
       AND (? IS NULL OR gc.group_id != ?)
-  `).all(channelId, excludeGroupId, excludeGroupId);
+      AND (
+        ? IS NULL
+        OR (? = 'collaborator' AND cg.collaborator_id IS NOT NULL)
+        OR (? = 'partner' AND cg.collaborator_id IS NULL)
+      )
+  `).all(channelId, excludeGroupId, excludeGroupId, ownerType, ownerType, ownerType);
 
   return rows.reduce((sum, row) => {
     const group = parseGroup(row);
@@ -466,13 +472,21 @@ function existingShareForChannel(channelId, month = "", excludeGroupId = null) {
 function groupDetail(groupId, month) {
   const group = parseGroup(db.prepare(`
     SELECT g.*, p.partner_name, p.display_name, p.email, p.contact_name, p.phone,
-           p.counter_email, p.address, p.pingpongx, p.bank_name, p.account_number, p.internal_notes
+           p.counter_email, p.address, p.pingpongx, p.bank_name, p.account_number, p.internal_notes,
+           col.name AS collaborator_name, col.display_name AS collaborator_display_name
     FROM channel_groups g
-    JOIN partners p ON p.id = g.partner_id
+    LEFT JOIN partners p ON p.id = g.partner_id
+    LEFT JOIN collaborators col ON col.id = g.collaborator_id
     WHERE g.id = ?
   `).get(groupId));
 
   if (!group) return null;
+
+  group.owner_type = group.collaborator_id ? "collaborator" : "partner";
+  if (group.owner_type === "collaborator") {
+    group.partner_name = group.partner_name || group.collaborator_display_name || group.collaborator_name || "";
+    group.display_name = group.display_name || group.collaborator_display_name || group.collaborator_name || "";
+  }
 
   const conversion = exchangeFactor(group.currency, month);
   const channels = db.prepare(`
@@ -1414,9 +1428,12 @@ function dashboardGroupTotals(month = "") {
       }
 
       const partnerId = detail.partner_id;
-      if (!partnerMap.has(partnerId)) {
-        partnerMap.set(partnerId, {
+      const ownerKey = partnerId ? `partner:${partnerId}` : `collaborator:${detail.collaborator_id}`;
+      if (!partnerMap.has(ownerKey)) {
+        partnerMap.set(ownerKey, {
           partner_id: partnerId,
+          collaborator_id: detail.collaborator_id || null,
+          owner_type: partnerId ? "partner" : "collaborator",
           partner_name: detail.display_name || detail.partner_name || "-",
           group_id: detail.id,
           group_name: detail.group_name,
@@ -1428,7 +1445,7 @@ function dashboardGroupTotals(month = "") {
         });
       }
 
-      const partner = partnerMap.get(partnerId);
+      const partner = partnerMap.get(ownerKey);
       if (groupRevenue > Number(partner.best_group_revenue_usd || 0)) {
         partner.group_id = detail.id;
         partner.group_name = detail.group_name;
@@ -1808,9 +1825,12 @@ exports.getPartnerDashboard = (req, res) => {
 
     const placeholders = groupIds.map(() => "?").join(",");
     const assignedGroups = db.prepare(`
-      SELECT g.id, g.group_name, g.currency, g.partner_id, p.partner_name, p.display_name AS partner_display_name
+      SELECT g.id, g.group_name, g.currency, g.partner_id,
+             COALESCE(p.partner_name, col.name) AS partner_name,
+             COALESCE(p.display_name, col.display_name, col.name) AS partner_display_name
       FROM channel_groups g
-      JOIN partners p ON p.id = g.partner_id
+      LEFT JOIN partners p ON p.id = g.partner_id
+      LEFT JOIN collaborators col ON col.id = g.collaborator_id
       WHERE g.id IN (${placeholders})
       ORDER BY g.group_name COLLATE NOCASE
     `).all(...groupIds);
@@ -3027,16 +3047,21 @@ exports.getGroups = (req, res) => {
 
     const groupWhere = allowedGroupIds ? `WHERE g.id IN (${allowedGroupIds.map(() => "?").join(",")})` : "";
     const groups = db.prepare(`
-      SELECT g.*, p.partner_name, COUNT(gc.id) AS channel_count
+      SELECT g.*,
+             COALESCE(p.partner_name, col.display_name, col.name) AS partner_name,
+             col.name AS collaborator_name,
+             col.display_name AS collaborator_display_name,
+             COUNT(gc.id) AS channel_count
       FROM channel_groups g
-      JOIN partners p ON p.id = g.partner_id
+      LEFT JOIN partners p ON p.id = g.partner_id
+      LEFT JOIN collaborators col ON col.id = g.collaborator_id
       LEFT JOIN group_channels gc ON gc.group_id = g.id
       ${groupWhere}
       GROUP BY g.id
       ORDER BY g.updated_at DESC, g.id DESC
     `).all(...(allowedGroupIds || [])).map(parseGroup).map((group) => {
       const detail = groupDetail(group.id, month);
-      return { ...group, summary: detail?.summary || null };
+      return { ...group, owner_type: group.collaborator_id ? "collaborator" : "partner", summary: detail?.summary || null };
     });
 
     res.json({ success: true, data: groups });
@@ -3045,19 +3070,173 @@ exports.getGroups = (req, res) => {
   }
 };
 
+function resolveGroupOwner(data = {}) {
+  const partnerId = data.partner_id ? Number(data.partner_id) : null;
+  const collaboratorId = data.collaborator_id ? Number(data.collaborator_id) : null;
+
+  if (!partnerId && !collaboratorId) {
+    return { error: "Vui lòng chọn partner hoặc collaborator cho group" };
+  }
+  if (partnerId && collaboratorId) {
+    return { error: "Group chỉ có thể thuộc về partner hoặc collaborator, không thể cả hai" };
+  }
+  if (partnerId && !db.prepare("SELECT id FROM partners WHERE id = ?").get(partnerId)) {
+    return { error: "Không tìm thấy partner" };
+  }
+  if (collaboratorId && !db.prepare("SELECT id FROM collaborators WHERE id = ?").get(collaboratorId)) {
+    return { error: "Không tìm thấy collaborator" };
+  }
+
+  return { partnerId, collaboratorId };
+}
+
+function syncCollaboratorChannelsIntoGroup(group, month = "") {
+  const managedRows = db.prepare(`
+    SELECT mc.*, rs.share_rate AS colab_share_rate
+    FROM managed_channels mc
+    LEFT JOIN revenue_sharings rs ON rs.id = mc.colab_revenue_sharing_id
+    WHERE mc.collaborator_id = ?
+    ORDER BY mc.title COLLATE NOCASE
+  `).all(group.collaborator_id);
+
+  const existingByChannel = new Map(
+    db.prepare("SELECT id, channel_id, custom_share, custom_share_override FROM group_channels WHERE group_id = ?")
+      .all(group.id)
+      .map((row) => [row.channel_id, row])
+  );
+
+  const presentReportIds = existingReportChannelIds(managedRows.map((row) => row.channel_id));
+  for (const row of managedRows) {
+    if (presentReportIds.has(row.channel_id)) continue;
+    upsertChannel({
+      channel_id: row.channel_id,
+      title: row.title || row.channel_id,
+      description: row.description || "",
+      custom_url: row.custom_url || "",
+      thumbnail: row.thumbnail || "",
+      view_count: Number(row.view_count || 0),
+      subscriber_count: Number(row.subscriber_count || 0),
+      video_count: Number(row.video_count || 0),
+      country: row.country || "",
+      published_at: row.published_at || "",
+      latest_videos: undefined
+    });
+  }
+
+  const usesTiers = hasRevenueTiers(parseGroup(group)?.tiers);
+  const defaultShare = usesTiers ? groupDefaultShare(group.id, month) : 0;
+  const insertStmt = db.prepare("INSERT INTO group_channels (group_id, channel_id, custom_share, custom_share_override) VALUES (?, ?, ?, ?)");
+  const updateStmt = db.prepare("UPDATE group_channels SET custom_share = ?, custom_share_override = 1 WHERE id = ?");
+  const added = [];
+  const addedWithoutRate = [];
+  const updated = [];
+  const skipped = [];
+
+  db.transaction(() => {
+    for (const row of managedRows) {
+      const rate = Number(row.colab_share_rate);
+      const hasRate = Number.isFinite(rate) && rate > 0 && rate <= 100;
+      const current = existingByChannel.get(row.channel_id);
+
+      if (!current) {
+        const appliedShare = usesTiers ? defaultShare : hasRate ? rate : 0;
+        const otherShare = existingShareForChannel(row.channel_id, month, group.id, "collaborator");
+        if (otherShare + appliedShare > 100) {
+          skipped.push({ channel_id: row.channel_id, title: row.title || row.channel_id, existing_share: otherShare, new_share: appliedShare });
+          continue;
+        }
+        insertStmt.run(group.id, row.channel_id, hasRate ? rate : null, hasRate ? 1 : 0);
+        added.push(row.channel_id);
+        if (!hasRate && !usesTiers) {
+          addedWithoutRate.push({ channel_id: row.channel_id, title: row.title || row.channel_id });
+        }
+      } else if (hasRate && !usesTiers && (Number(current.custom_share) !== rate || !current.custom_share_override)) {
+        const otherShare = existingShareForChannel(row.channel_id, month, group.id, "collaborator");
+        if (otherShare + rate > 100) {
+          skipped.push({ channel_id: row.channel_id, title: row.title || row.channel_id, existing_share: otherShare, new_share: rate });
+          continue;
+        }
+        updateStmt.run(rate, current.id);
+        updated.push(row.channel_id);
+      }
+    }
+  })();
+
+  return {
+    matched: managedRows.length,
+    added: added.length,
+    updated: updated.length,
+    added_without_rate: addedWithoutRate,
+    skipped
+  };
+}
+
+function collaboratorSyncMessage(result) {
+  const parts = [`Đã đồng bộ ${result.matched} channel từ Channel Management: thêm ${result.added}, cập nhật rate ${result.updated}`];
+  if (result.added_without_rate.length) {
+    parts.push(`CHÚ Ý: ${result.added_without_rate.length} channel chưa khai rate sharing collaborator nên đang tính 0% — hãy cập nhật Channel Management rồi bấm Sync lại`);
+  }
+  if (result.skipped.length) {
+    parts.push(`bỏ qua ${result.skipped.length} channel vì tổng revenue share vượt 100%`);
+  }
+  return parts.join(". ");
+}
+
+exports.getReportCollaborators = (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT col.id, col.name, col.display_name, col.status,
+             (SELECT COUNT(*) FROM managed_channels mc WHERE mc.collaborator_id = col.id) AS channel_count
+      FROM collaborators col
+      ORDER BY (col.status = 'active') DESC, col.name COLLATE NOCASE
+    `).all();
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi lấy danh sách collaborator", error: error.message });
+  }
+};
+
+exports.syncCollaboratorGroupChannels = (req, res) => {
+  try {
+    const group = db.prepare("SELECT * FROM channel_groups WHERE id = ?").get(req.params.id);
+    if (!group) return res.status(404).json({ success: false, message: "Không tìm thấy group" });
+    if (!group.collaborator_id) {
+      return res.status(400).json({ success: false, message: "Group này không thuộc collaborator nên không thể đồng bộ từ Channel Management" });
+    }
+
+    const result = syncCollaboratorChannelsIntoGroup(group, String(req.body?.month || req.query.month || ""));
+    res.json({ success: true, message: collaboratorSyncMessage(result), data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi đồng bộ channel của collaborator", error: error.message });
+  }
+};
+
 exports.createGroup = (req, res) => {
   try {
     const data = req.body || {};
-    if (!data.partner_id || !String(data.group_name || "").trim()) {
-      return res.status(400).json({ success: false, message: "Vui lòng chọn partner và nhập tên group" });
+    if (!String(data.group_name || "").trim()) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập tên group" });
+    }
+
+    const owner = resolveGroupOwner(data);
+    if (owner.error) {
+      return res.status(400).json({ success: false, message: owner.error });
     }
 
     const result = db.prepare(`
-      INSERT INTO channel_groups (partner_id, group_name, currency, fee_rate, description, tiers)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(data.partner_id, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), data.description || "", JSON.stringify(data.tiers || []));
+      INSERT INTO channel_groups (partner_id, collaborator_id, group_name, currency, fee_rate, description, tiers)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(owner.partnerId, owner.collaboratorId, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), data.description || "", JSON.stringify(data.tiers || []));
 
-    res.json({ success: true, message: "Đã tạo group", data: groupDetail(result.lastInsertRowid, data.month || "") });
+    let message = "Đã tạo group";
+    let syncResult = null;
+    if (owner.collaboratorId && data.auto_add_channels !== false) {
+      const group = db.prepare("SELECT * FROM channel_groups WHERE id = ?").get(result.lastInsertRowid);
+      syncResult = syncCollaboratorChannelsIntoGroup(group, String(data.month || ""));
+      message = `Đã tạo group. ${collaboratorSyncMessage(syncResult)}`;
+    }
+
+    res.json({ success: true, message, data: groupDetail(result.lastInsertRowid, data.month || ""), sync: syncResult });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi tạo group", error: error.message });
   }
@@ -3066,11 +3245,37 @@ exports.createGroup = (req, res) => {
 exports.updateGroup = (req, res) => {
   try {
     const data = req.body || {};
+    if (!String(data.group_name || "").trim()) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập tên group" });
+    }
+
+    const owner = resolveGroupOwner(data);
+    if (owner.error) {
+      return res.status(400).json({ success: false, message: owner.error });
+    }
+
+    const current = db.prepare("SELECT * FROM channel_groups WHERE id = ?").get(req.params.id);
+    if (!current) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy group" });
+    }
+
+    const currentType = current.collaborator_id ? "collaborator" : "partner";
+    const nextType = owner.collaboratorId ? "collaborator" : "partner";
+    if (currentType !== nextType) {
+      const channelCount = db.prepare("SELECT COUNT(*) AS n FROM group_channels WHERE group_id = ?").get(req.params.id).n;
+      if (channelCount > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Không thể đổi group giữa partner và collaborator khi group đã có channel. Hãy xóa channel trước hoặc tạo group mới."
+        });
+      }
+    }
+
     db.prepare(`
-      UPDATE channel_groups SET partner_id = ?, group_name = ?, currency = ?, fee_rate = ?,
+      UPDATE channel_groups SET partner_id = ?, collaborator_id = ?, group_name = ?, currency = ?, fee_rate = ?,
         description = ?, tiers = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(data.partner_id, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), data.description || "", JSON.stringify(data.tiers || []), req.params.id);
+    `).run(owner.partnerId, owner.collaboratorId, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), data.description || "", JSON.stringify(data.tiers || []), req.params.id);
 
     res.json({ success: true, message: "Đã cập nhật group" });
   } catch (error) {
@@ -3131,6 +3336,135 @@ exports.exportGroupPdf = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not export PDF", error: error.message });
+  }
+};
+
+exports.exportMonthChannelsExcel = async (req, res) => {
+  try {
+    const month = String(req.body?.month || req.query.month || "");
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ success: false, message: "Vui lòng chọn tháng dạng YYYY-MM" });
+    }
+
+    const rows = db.prepare(`
+      SELECT
+        cr.channel_id,
+        SUM(cr.revenue) AS total_revenue,
+        GROUP_CONCAT(DISTINCT cr.network_id) AS revenue_network_ids,
+        c.title AS channel_title,
+        c.status AS channel_status,
+        c.subscriber_count AS channel_subscriber_count,
+        c.view_count AS channel_view_count,
+        c.video_count AS channel_video_count,
+        mc.title AS managed_title,
+        mc.subscriber_count AS managed_subscriber_count,
+        mc.view_count AS managed_view_count,
+        mc.video_count AS managed_video_count,
+        mn.name AS managed_network_name,
+        p.partner_name,
+        p.display_name AS partner_display_name,
+        rs.share_rate AS revenue_share_rate
+      FROM channel_revenues cr
+      LEFT JOIN channels c ON c.channel_id = cr.channel_id
+      LEFT JOIN managed_channels mc ON mc.channel_id = cr.channel_id
+      LEFT JOIN networks mn ON mn.id = mc.network_id
+      LEFT JOIN partners p ON p.id = mc.partner_id
+      LEFT JOIN revenue_sharings rs ON rs.id = mc.revenue_sharing_id
+      WHERE cr.month = ?
+      GROUP BY cr.channel_id
+      ORDER BY total_revenue DESC, channel_title COLLATE NOCASE
+    `).all(month);
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: `Không có dữ liệu channel cho tháng ${month}` });
+    }
+
+    const networkNameById = new Map(db.prepare("SELECT id, name FROM networks").all().map((network) => [String(network.id), network.name]));
+    const monthLabel = exportMonthFilePart(month);
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = getBrandNameForExport();
+    workbook.created = new Date();
+    const sheet = workbook.addWorksheet("All Channels");
+
+    sheet.columns = [
+      { header: "No.", key: "no", width: 8 },
+      { header: "Channel Name", key: "title", width: 34 },
+      { header: "Channel ID", key: "channel_id", width: 30 },
+      { header: "Channel Link", key: "link", width: 58 },
+      { header: "Network", key: "network", width: 24 },
+      { header: "Partner", key: "partner", width: 28 },
+      { header: "Rate Sharing", key: "rate", width: 14 },
+      { header: "Subs", key: "subs", width: 14 },
+      { header: "Views", key: "views", width: 16 },
+      { header: "Videos", key: "videos", width: 12 },
+      { header: `Revenue ${monthLabel}`, key: "revenue", width: 18 }
+    ];
+
+    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+    sheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+
+    rows.forEach((row, index) => {
+      const link = `https://www.youtube.com/channel/${row.channel_id}`;
+      const isPlaceholder = row.channel_status === "error";
+      const stat = (channelValue, managedValue) => (
+        isPlaceholder ? Number(managedValue ?? channelValue ?? 0) : Number(channelValue ?? managedValue ?? 0)
+      );
+      const networkNames = String(row.revenue_network_ids || "")
+        .split(",")
+        .filter(Boolean)
+        .map((id) => networkNameById.get(id))
+        .filter(Boolean);
+      const added = sheet.addRow({
+        no: index + 1,
+        title: (isPlaceholder ? row.managed_title || row.channel_title : row.channel_title || row.managed_title) || row.channel_id,
+        channel_id: row.channel_id,
+        link,
+        network: networkNames.length ? networkNames.join(", ") : row.managed_network_name || "",
+        partner: row.partner_display_name || row.partner_name || "",
+        rate: row.revenue_share_rate == null ? "" : `${Number(row.revenue_share_rate || 0)}%`,
+        subs: stat(row.channel_subscriber_count, row.managed_subscriber_count),
+        views: stat(row.channel_view_count, row.managed_view_count),
+        videos: stat(row.channel_video_count, row.managed_video_count),
+        revenue: Number(row.total_revenue || 0)
+      });
+      added.getCell("link").value = { text: link, hyperlink: link };
+      added.getCell("link").font = { color: { argb: "FF1D4ED8" }, underline: true };
+      added.getCell("subs").numFmt = "#,##0";
+      added.getCell("views").numFmt = "#,##0";
+      added.getCell("videos").numFmt = "#,##0";
+      added.getCell("revenue").numFmt = "#,##0.00";
+    });
+
+    const totalRow = sheet.addRow({
+      title: `Total (${rows.length} channels)`,
+      revenue: rows.reduce((sum, row) => sum + Number(row.total_revenue || 0), 0)
+    });
+    totalRow.font = { bold: true };
+    totalRow.getCell("revenue").numFmt = "#,##0.00";
+    totalRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+
+    sheet.eachRow((row, rowNumber) => {
+      row.eachCell({ includeEmpty: rowNumber === totalRow.number }, (cell) => {
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFD9E2EC" } },
+          left: { style: "thin", color: { argb: "FFD9E2EC" } },
+          bottom: { style: "thin", color: { argb: "FFD9E2EC" } },
+          right: { style: "thin", color: { argb: "FFD9E2EC" } }
+        };
+        if (rowNumber > 1) cell.alignment = { vertical: "middle" };
+      });
+    });
+
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    sheet.autoFilter = `A1:K${rows.length + 1}`;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fileName = `${[monthLabel, "all-channels", getBrandNameForExport()].map((part) => safeFileName(part)).filter(Boolean).join("-")}.xlsx`;
+    setDownloadHeaders(res, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not export month channels", error: error.message });
   }
 };
 
@@ -3204,12 +3538,13 @@ exports.addGroupChannels = async (req, res) => {
       return res.status(400).json({ success: false, message: "Revenue share phải nằm trong khoảng 0% đến 100%" });
     }
 
+    const isCollaboratorGroup = Boolean(group.collaborator_id);
     const managedShareRows = managedChannelRowsByIds(channelsToInsert);
     const managedShareByChannel = new Map(
       managedShareRows
         .map((channel) => ({
           channel_id: channel.channel_id,
-          revenue_share_rate: Number(channel.revenue_share_rate)
+          revenue_share_rate: Number(isCollaboratorGroup ? channel.colab_revenue_share_rate : channel.revenue_share_rate)
         }))
         .filter((channel) => Number.isFinite(channel.revenue_share_rate) && channel.revenue_share_rate > 0 && channel.revenue_share_rate <= 100)
         .map((channel) => [channel.channel_id, channel.revenue_share_rate])
@@ -3232,10 +3567,11 @@ exports.addGroupChannels = async (req, res) => {
       customShare != null || managedShareByChannel.has(channelId) ? 1 : 0
     );
 
+    const groupOwnerType = currentGroup?.collaborator_id ? "collaborator" : "partner";
     const invalidChannels = channelsToInsert
       .map((channelId) => {
         const appliedShare = shareForChannel(channelId);
-        const existingShare = existingShareForChannel(channelId, month || "", req.params.id);
+        const existingShare = existingShareForChannel(channelId, month || "", req.params.id, groupOwnerType);
         return {
           channel_id: channelId,
           existing_share: existingShare,

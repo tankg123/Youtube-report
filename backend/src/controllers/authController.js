@@ -906,7 +906,7 @@ exports.getAllUsers = (req, res) => {
           json_group_array(
             CASE
               WHEN g.id IS NULL THEN NULL
-              ELSE json_object('id', g.id, 'group_name', g.group_name, 'partner_name', p.partner_name)
+              ELSE json_object('id', g.id, 'group_name', g.group_name, 'partner_name', COALESCE(p.partner_name, gcol.display_name, gcol.name))
             END
           ),
           '[]'
@@ -921,6 +921,7 @@ exports.getAllUsers = (req, res) => {
       LEFT JOIN user_group_permissions ugp ON ugp.user_id = u.id
       LEFT JOIN channel_groups g ON g.id = ugp.group_id
       LEFT JOIN partners p ON p.id = g.partner_id
+      LEFT JOIN collaborators gcol ON gcol.id = g.collaborator_id
       GROUP BY u.id
       ORDER BY u.id DESC
     `).all().map((item) => {

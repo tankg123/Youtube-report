@@ -17,6 +17,7 @@ router.get("/dashboard", allowRoles(...REPORT_ROLES), reportController.getDashbo
 router.get("/partner-dashboard", allowRoles("Partner"), reportController.getPartnerDashboard);
 router.get("/manager", allowRoles(...REPORT_ROLES), reportController.getReportSummary);
 router.delete("/manager", allowRoles(...REPORT_ROLES), reportController.deleteReportMonth);
+router.post("/manager/export-month-channels", allowRoles(...REPORT_ROLES), reportController.exportMonthChannelsExcel);
 router.get("/youtube/quota", allowRoles(...REPORT_ROLES), reportController.getYoutubeQuota);
 
 router.get("/networks", allowRoles(...NETWORK_READ_ROLES), reportController.getNetworks);
@@ -46,8 +47,11 @@ router.post("/partners", allowRoles(...PARTNER_ROLES), reportController.createPa
 router.put("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.updatePartner);
 router.delete("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.deletePartner);
 
+router.get("/collaborators", allowRoles(...REPORT_ROLES), reportController.getReportCollaborators);
+
 router.get("/groups", allowRoles(...GROUP_READ_ROLES, "Account"), reportController.getGroups);
 router.post("/groups", allowRoles(...REPORT_ROLES), reportController.createGroup);
+router.post("/groups/:id/sync-collaborator-channels", allowRoles(...REPORT_ROLES), reportController.syncCollaboratorGroupChannels);
 router.put("/groups/:id", allowRoles(...REPORT_ROLES), reportController.updateGroup);
 router.delete("/groups/:id", allowRoles(...REPORT_ROLES), reportController.deleteGroup);
 router.get("/groups/:id", allowRoles(...GROUP_READ_ROLES), reportController.getGroupDetail);

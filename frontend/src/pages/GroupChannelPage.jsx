@@ -6,7 +6,10 @@ import { useAuth } from "../context/AuthContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
 
 const emptyGroup = {
+  owner_type: "partner",
   partner_id: "",
+  collaborator_id: "",
+  auto_add_channels: true,
   group_name: "",
   currency: "USD",
   fee_rate: 0,
@@ -594,9 +597,13 @@ function exportGroupPdf(group, company = fallbackCompany) {
   win.document.close();
 }
 
-function GroupForm({ partners, value, onChange }) {
+function GroupForm({ partners, collaborators, isEditing, value, onChange }) {
   const [partnerSearch, setPartnerSearch] = useState("");
   const [partnerSelectOpen, setPartnerSelectOpen] = useState(false);
+  const ownerType = value.owner_type === "collaborator" ? "collaborator" : "partner";
+  const sortedCollaborators = useMemo(() => [...(collaborators || [])].sort((left, right) =>
+    String(left.display_name || left.name || "").localeCompare(String(right.display_name || right.name || ""), "vi", { sensitivity: "base" })
+  ), [collaborators]);
   const sortedPartners = useMemo(() => [...(partners || [])].sort((left, right) =>
     String(left.display_name || left.partner_name || "").localeCompare(String(right.display_name || right.partner_name || ""), "vi", { sensitivity: "base" })
   ), [partners]);
@@ -625,7 +632,48 @@ function GroupForm({ partners, value, onChange }) {
 
   return (
     <div className="space-y-5">
+      <div>
+        <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Group for</span>
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+          <button
+            type="button"
+            disabled={isEditing}
+            onClick={() => onChange({ ...value, owner_type: "partner" })}
+            className={`rounded-xl px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed ${ownerType === "partner" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800 disabled:opacity-40"}`}
+            title={isEditing ? "Không thể đổi loại group sau khi tạo" : undefined}
+          >
+            Partner
+          </button>
+          <button
+            type="button"
+            disabled={isEditing}
+            onClick={() => onChange({ ...value, owner_type: "collaborator" })}
+            className={`rounded-xl px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed ${ownerType === "collaborator" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800 disabled:opacity-40"}`}
+            title={isEditing ? "Không thể đổi loại group sau khi tạo" : undefined}
+          >
+            Collaborator
+          </button>
+        </div>
+      </div>
+
       <div className="grid md:grid-cols-2 gap-4">
+        {ownerType === "collaborator" ? (
+          <label>
+            <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Collaborator</span>
+            <select
+              value={value.collaborator_id}
+              onChange={(e) => onChange({ ...value, collaborator_id: e.target.value })}
+              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3"
+            >
+              <option value="">Select collaborator</option>
+              {sortedCollaborators.map((collaborator) => (
+                <option key={collaborator.id} value={collaborator.id}>
+                  {(collaborator.display_name || collaborator.name) + ` (${collaborator.channel_count || 0} ch)`}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
         <div
           className="relative"
           onBlur={(event) => {
@@ -693,6 +741,7 @@ function GroupForm({ partners, value, onChange }) {
             ))}
           </select>
         </div>
+        )}
         <label>
           <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Tên group</span>
           <input value={value.group_name} onChange={(e) => onChange({ ...value, group_name: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder="Tên hiển thị group" />
@@ -714,6 +763,21 @@ function GroupForm({ partners, value, onChange }) {
           <input value={value.description} onChange={(e) => onChange({ ...value, description: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder="Mô tả ngắn về group này..." />
         </label>
       </div>
+
+      {ownerType === "collaborator" && !isEditing && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <input
+            type="checkbox"
+            checked={value.auto_add_channels !== false}
+            onChange={(e) => onChange({ ...value, auto_add_channels: e.target.checked })}
+            className="mt-1 h-4 w-4 rounded border-slate-300"
+          />
+          <span>
+            <span className="block font-black text-slate-900">Tự động thêm toàn bộ kênh của collaborator</span>
+            <span className="mt-1 block text-sm text-slate-600">Lấy tất cả kênh gán cho collaborator này trong Channel Management, kèm rate sharing đã khai cho từng kênh.</span>
+          </span>
+        </label>
+      )}
 
       <div className="border border-slate-200 rounded-3xl overflow-hidden">
         <div className="px-4 py-3 bg-slate-50 flex items-center justify-between">
@@ -775,6 +839,7 @@ export default function GroupChannelPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState(currentMonth());
   const [partners, setPartners] = useState([]);
+  const [collaborators, setCollaborators] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [groups, setGroups] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -788,6 +853,7 @@ export default function GroupChannelPage() {
   const [loadingPartnerChannels, setLoadingPartnerChannels] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState("");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
@@ -862,10 +928,21 @@ export default function GroupChannelPage() {
     try {
       setLoading(true);
       const requests = canViewReports
-        ? [api.get("/reports/partners", { params: { scope: "active" } }), api.get("/reports/groups", { params: { month } }), api.get("/reports/companies")]
-        : [Promise.resolve({ data: { data: [] } }), api.get("/reports/groups", { params: { month } }), Promise.resolve({ data: { data: [] } })];
-      const [partnersRes, groupsRes, companiesRes] = await Promise.all(requests);
+        ? [
+            api.get("/reports/partners", { params: { scope: "active" } }),
+            api.get("/reports/groups", { params: { month } }),
+            api.get("/reports/companies"),
+            api.get("/reports/collaborators")
+          ]
+        : [
+            Promise.resolve({ data: { data: [] } }),
+            api.get("/reports/groups", { params: { month } }),
+            Promise.resolve({ data: { data: [] } }),
+            Promise.resolve({ data: { data: [] } })
+          ];
+      const [partnersRes, groupsRes, companiesRes, collaboratorsRes] = await Promise.all(requests);
       setPartners(partnersRes.data.data || []);
+      setCollaborators(collaboratorsRes.data.data || []);
       const nextCompanies = companiesRes.data.data || [];
       setCompanies(nextCompanies);
       if (!selectedCompanyId && nextCompanies[0]) setSelectedCompanyId(String(nextCompanies[0].id));
@@ -903,7 +980,10 @@ export default function GroupChannelPage() {
     if (!detail) return;
     setEditing(detail);
     setGroupForm({
-      partner_id: detail.partner_id,
+      owner_type: detail.collaborator_id ? "collaborator" : "partner",
+      partner_id: detail.partner_id || "",
+      collaborator_id: detail.collaborator_id || "",
+      auto_add_channels: true,
       group_name: detail.group_name,
       currency: detail.currency,
       fee_rate: detail.fee_rate ?? 0,
@@ -930,8 +1010,12 @@ export default function GroupChannelPage() {
     try {
       setSaving(true);
       let nextSelectedId = editing?.id || selectedId;
+      const isCollaboratorGroup = groupForm.owner_type === "collaborator";
       const payload = {
         ...groupForm,
+        partner_id: isCollaboratorGroup ? "" : groupForm.partner_id,
+        collaborator_id: isCollaboratorGroup ? groupForm.collaborator_id : "",
+        month,
         fee_rate: Number(groupForm.fee_rate || 0),
         tiers: groupForm.tiers.map((tier) => ({
           min: Number(tier.min || 0),
@@ -941,13 +1025,13 @@ export default function GroupChannelPage() {
       };
 
       if (editing) {
-        await api.put(`/reports/groups/${editing.id}`, payload);
-        setMessage("Đã cập nhật group");
+        const res = await api.put(`/reports/groups/${editing.id}`, payload);
+        setMessage(res.data?.message || "Đã cập nhật group");
       } else {
         const res = await api.post("/reports/groups", payload);
         nextSelectedId = res.data.data?.id || selectedId;
         setSelectedId(nextSelectedId);
-        setMessage("Đã tạo group");
+        setMessage(res.data?.message || "Đã tạo group");
       }
 
       setGroupModal(false);
@@ -1032,6 +1116,22 @@ export default function GroupChannelPage() {
     await api.delete(`/reports/groups/${selectedId}/channels/${groupChannelId}`);
     await fetchDetail();
     await fetchAll();
+  }
+
+  async function syncCollaboratorChannels() {
+    if (!detail?.collaborator_id || syncing) return;
+
+    try {
+      setSyncing(true);
+      const res = await api.post(`/reports/groups/${detail.id}/sync-collaborator-channels`, { month });
+      setMessage(res.data?.message || "Đã đồng bộ channel của collaborator");
+      await fetchDetail();
+      await fetchAll();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Lỗi đồng bộ channel của collaborator");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   function selectedCompany() {
@@ -1251,7 +1351,10 @@ export default function GroupChannelPage() {
                     <span className="font-black text-slate-900 truncate">{group.group_name}</span>
                     <span className="text-xs bg-white border border-slate-200 rounded-full px-2 py-1">{group.channel_count} ch</span>
                   </div>
-                  <p className="text-sm text-slate-500 mt-1 truncate">{group.partner_name}</p>
+                  <p className="text-sm text-slate-500 mt-1 flex items-center gap-2 min-w-0">
+                    {group.collaborator_id ? <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-violet-700">CTV</span> : null}
+                    <span className="truncate">{group.partner_name}</span>
+                  </p>
                   <p className="text-sm font-bold text-emerald-700 mt-3">{converted(group.summary?.paid_converted ?? group.summary?.paid ?? 0, group.currency)}</p>
                 </button>
               ))}
@@ -1279,10 +1382,24 @@ export default function GroupChannelPage() {
                 <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 mb-5">
                   <div>
                     <h2 className="text-2xl font-black text-slate-900">{detail.group_name}</h2>
-                    <p className="text-slate-500">{detail.partner_name}</p>
+                    <p className="text-slate-500 flex items-center gap-2">
+                      {detail.collaborator_id ? <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-black uppercase text-violet-700">Collaborator</span> : null}
+                      <span>{detail.partner_name}</span>
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {canViewReports && <button onClick={() => setAddModal(true)} className="bg-emerald-600 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Plus size={17} /> Add channel</button>}
+                    {canViewReports && detail.collaborator_id && (
+                      <button
+                        onClick={syncCollaboratorChannels}
+                        disabled={syncing || saving}
+                        className="bg-violet-50 border border-violet-200 text-violet-700 rounded-2xl px-4 py-3 font-bold flex items-center gap-2 disabled:opacity-60"
+                        title="Thêm kênh mới và cập nhật rate theo Channel Management của collaborator này"
+                      >
+                        {syncing ? <Loader2 className="animate-spin" size={17} /> : <RefreshCw size={17} />}
+                        Sync CM channels
+                      </button>
+                    )}
                     <button onClick={() => fetchDetail()} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><RefreshCw size={17} /> Refresh</button>
                     <button onClick={() => setExportModalOpen(true)} className="bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Download size={17} /> Export</button>
                     {canViewReports && <button onClick={openEdit} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Edit3 size={17} /> Edit</button>}
@@ -1476,7 +1593,7 @@ export default function GroupChannelPage() {
               <button type="button" onClick={() => setGroupModal(false)} className="w-10 h-10 rounded-xl border border-slate-300 flex items-center justify-center"><X size={18} /></button>
             </div>
             <div className="p-6">
-              <GroupForm partners={partners} value={groupForm} onChange={setGroupForm} />
+              <GroupForm partners={partners} collaborators={collaborators} isEditing={Boolean(editing)} value={groupForm} onChange={setGroupForm} />
             </div>
             <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3">
               <button type="button" onClick={() => setGroupModal(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Hủy</button>
@@ -1569,7 +1686,7 @@ export default function GroupChannelPage() {
               </label>
               )}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                <p><b className="text-slate-900">Partner:</b> {detail.partner_name}</p>
+                <p><b className="text-slate-900">{detail.collaborator_id ? "Collaborator:" : "Partner:"}</b> {detail.partner_name}</p>
                 <p><b className="text-slate-900">Month:</b> {monthLabel(detail.month)}</p>
                 <p><b className="text-slate-900">Payable:</b> {converted(detail.summary?.payable_converted ?? detail.summary?.paid_converted ?? 0, detail.currency)}</p>
               </div>

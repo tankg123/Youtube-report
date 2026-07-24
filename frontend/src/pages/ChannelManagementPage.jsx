@@ -707,7 +707,7 @@ export default function ChannelManagementPage() {
       </section>
 
       <div className="surface-3d bg-white border border-slate-200 rounded-[28px] overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex flex-col gap-4">
+        <div className="surface-front-layer p-5 border-b border-slate-100 flex flex-col gap-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <p className="ui-accent-text text-xs font-black uppercase tracking-[0.16em]">Overview workspace</p>

@@ -72,6 +72,7 @@ export default function ExportMultiPage() {
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
   const [message, setMessage] = useState("");
 
   async function fetchData() {
@@ -137,6 +138,43 @@ export default function ExportMultiPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function exportErrorMessage(error, fallback) {
+    if (error.response?.data instanceof Blob) {
+      const text = await error.response.data.text();
+      try {
+        const parsed = JSON.parse(text);
+        return parsed.message || parsed.error || fallback;
+      } catch {
+        return text || fallback;
+      }
+    }
+    return error.response?.data?.message || error.message || fallback;
+  }
+
+  async function exportAllChannels() {
+    try {
+      setExportingAll(true);
+      setMessage(`Exporting all channels for ${monthLabel(month)}...`);
+      const res = await api.post("/reports/manager/export-month-channels", { month }, {
+        responseType: "blob",
+        timeout: 120000
+      });
+      const headerFileName = filenameFromDisposition(res.headers?.["content-disposition"] || "");
+      const fallbackFileName = [exportMonthFilePart(month), "all-channels", settings?.brand_name || "ANS Network"]
+        .map(sanitizeFileName).filter(Boolean).join("-") + ".xlsx";
+      downloadBlob(
+        res.data,
+        headerFileName || fallbackFileName,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      setMessage(`Exported all channels for ${monthLabel(month)}.`);
+    } catch (error) {
+      setMessage(await exportErrorMessage(error, "Could not export all channels"));
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
   async function exportSelected() {
     if (!selectedIds.length) {
       setMessage("Please choose at least one group to export.");
@@ -184,17 +222,7 @@ export default function ExportMultiPage() {
 
       setMessage(`Exported ${selectedGroups.length} group${selectedGroups.length > 1 ? "s" : ""}.`);
     } catch (error) {
-      if (error.response?.data instanceof Blob) {
-        const text = await error.response.data.text();
-        try {
-          const parsed = JSON.parse(text);
-          setMessage(parsed.message || parsed.error || "Could not export selected groups");
-        } catch {
-          setMessage(text || "Could not export selected groups");
-        }
-      } else {
-        setMessage(error.response?.data?.message || error.message || "Could not export selected groups");
-      }
+      setMessage(await exportErrorMessage(error, "Could not export selected groups"));
     } finally {
       setExporting(false);
     }
@@ -212,15 +240,27 @@ export default function ExportMultiPage() {
             <h1 className="text-2xl font-black text-slate-900">Export Multi</h1>
             <p className="mt-1 text-sm text-slate-500">Choose multiple groups and export invoices for the selected month.</p>
           </div>
-          <button
-            type="button"
-            onClick={exportSelected}
-            disabled={exporting || !selectedIds.length}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white shadow-sm disabled:opacity-50"
-          >
-            {exporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
-            Export selected ({selectedIds.length})
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={exportAllChannels}
+              disabled={exportingAll || exporting}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 shadow-sm disabled:opacity-50"
+              title={`Export every channel with revenue in ${monthLabel(month)} to Excel`}
+            >
+              {exportingAll ? <Loader2 className="animate-spin" size={18} /> : <FileSpreadsheet size={18} />}
+              Export all channels
+            </button>
+            <button
+              type="button"
+              onClick={exportSelected}
+              disabled={exporting || exportingAll || !selectedIds.length}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white shadow-sm disabled:opacity-50"
+            >
+              {exporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
+              Export selected ({selectedIds.length})
+            </button>
+          </div>
         </div>
       </section>
 

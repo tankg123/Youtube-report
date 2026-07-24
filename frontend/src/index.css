@@ -250,6 +250,12 @@ button.read-only-action-disabled {
   position: sticky;
 }
 
+/* Layers that open custom dropdowns (filter selects, search pickers) must paint
+   above later siblings such as the table shell, or the dropdown gets buried. */
+.surface-3d > .surface-front-layer {
+  z-index: 30;
+}
+
 .surface-3d-soft {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(241, 245, 249, 0.86));
   box-shadow: var(--surface-shadow-soft), inset 1px 1px rgba(255, 255, 255, 0.92), inset -1px -1px rgba(148, 163, 184, 0.1);

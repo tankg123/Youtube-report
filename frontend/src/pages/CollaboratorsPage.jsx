@@ -62,7 +62,7 @@ export default function CollaboratorsPage() {
   }
 
   async function deleteItem(id) {
-    if (!window.confirm("Delete this collaborator?")) return;
+    if (!window.confirm("Delete this collaborator?\n\nWARNING: every payment group (Group Channels) that belongs to this collaborator will also be deleted, including its channel list and share rates.")) return;
     await api.delete(`/channels/collaborators/${id}`);
     await fetchItems();
   }

@@ -379,6 +379,11 @@ function managedChannelRows(keyword = "", filters = {}) {
     params.push(filters.partner_id);
   }
 
+  if (filters.collaborator_id) {
+    where.push("mc.collaborator_id = ?");
+    params.push(filters.collaborator_id);
+  }
+
   if (filters.sharing_id) {
     where.push("mc.revenue_sharing_id = ?");
     params.push(filters.sharing_id);
@@ -1108,8 +1113,16 @@ function updateCollaborator(req, res) {
 
 function deleteCollaborator(req, res) {
   try {
-    db.prepare("DELETE FROM collaborators WHERE id = ?").run(req.params.id);
-    res.json({ success: true });
+    const removedGroups = db.transaction((collaboratorId) => {
+      const groupCount = db.prepare("SELECT COUNT(*) AS n FROM channel_groups WHERE collaborator_id = ?").get(collaboratorId).n;
+      db.prepare("DELETE FROM user_group_permissions WHERE group_id IN (SELECT id FROM channel_groups WHERE collaborator_id = ?)").run(collaboratorId);
+      db.prepare("DELETE FROM group_channels WHERE group_id IN (SELECT id FROM channel_groups WHERE collaborator_id = ?)").run(collaboratorId);
+      db.prepare("DELETE FROM channel_groups WHERE collaborator_id = ?").run(collaboratorId);
+      db.prepare("DELETE FROM collaborators WHERE id = ?").run(collaboratorId);
+      return groupCount;
+    })(req.params.id);
+
+    res.json({ success: true, data: { removed_groups: removedGroups } });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not delete collaborator", error: error.message });
   }

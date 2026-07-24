@@ -794,6 +794,45 @@ if (hasOldMonthChannelUnique) {
 db.exec("DROP INDEX IF EXISTS idx_channel_revenues_month_network_channel");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_revenues_month_network_channel ON channel_revenues(month, network_id, channel_id)");
 
+const channelGroupColumns = db.prepare("PRAGMA table_info(channel_groups)").all();
+const groupPartnerColumn = channelGroupColumns.find((column) => column.name === "partner_id");
+const groupHasCollaborator = channelGroupColumns.some((column) => column.name === "collaborator_id");
+
+if (!groupHasCollaborator || groupPartnerColumn?.notnull) {
+  const previousForeignKeys = db.pragma("foreign_keys", { simple: true });
+  db.pragma("foreign_keys = OFF");
+  db.exec(`
+    BEGIN;
+
+    CREATE TABLE channel_groups_migration (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      partner_id INTEGER,
+      collaborator_id INTEGER,
+      group_name TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      fee_rate REAL NOT NULL DEFAULT 0,
+      description TEXT,
+      tiers TEXT NOT NULL DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (partner_id) REFERENCES partners(id) ON DELETE CASCADE,
+      FOREIGN KEY (collaborator_id) REFERENCES collaborators(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO channel_groups_migration (
+      id, partner_id, collaborator_id, group_name, currency, fee_rate, description, tiers, created_at, updated_at
+    )
+    SELECT id, partner_id, ${groupHasCollaborator ? "collaborator_id" : "NULL"}, group_name, currency, fee_rate, description, tiers, created_at, updated_at
+    FROM channel_groups;
+
+    DROP TABLE channel_groups;
+    ALTER TABLE channel_groups_migration RENAME TO channel_groups;
+
+    COMMIT;
+  `);
+  db.pragma(`foreign_keys = ${previousForeignKeys ? "ON" : "OFF"}`);
+}
+
 const adminEmail = "admin";
 const existingAdmin = db
   .prepare("SELECT * FROM users WHERE email = ?")
