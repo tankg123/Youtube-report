@@ -677,6 +677,24 @@ function exportMonthFilePart(month = "") {
   return value || "month";
 }
 
+function monthsForAllChannelsExport(endMonth, monthsParam) {
+  const [year, monthValue] = endMonth.split("-").map(Number);
+  let count = 1;
+  if (String(monthsParam || "").trim().toLowerCase() === "year") {
+    count = monthValue;
+  } else {
+    const parsed = Number.parseInt(monthsParam, 10);
+    if (Number.isFinite(parsed)) count = Math.min(Math.max(parsed, 1), 24);
+  }
+
+  const months = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const date = new Date(Date.UTC(year, monthValue - 1 - offset, 1));
+    months.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return months;
+}
+
 function groupExportFileName(detail, extension) {
   const parts = [
     exportMonthFilePart(detail?.month),
@@ -3342,9 +3360,13 @@ exports.exportGroupPdf = async (req, res) => {
 exports.exportMonthChannelsExcel = async (req, res) => {
   try {
     const month = String(req.body?.month || req.query.month || "");
-    if (!/^\d{4}-\d{2}$/.test(month)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       return res.status(400).json({ success: false, message: "Vui lòng chọn tháng dạng YYYY-MM" });
     }
+
+    const months = monthsForAllChannelsExport(month, req.body?.months ?? req.query.months);
+    const isMultiMonth = months.length > 1;
+    const monthPlaceholders = months.map(() => "?").join(", ");
 
     const rows = db.prepare(`
       SELECT
@@ -3370,17 +3392,38 @@ exports.exportMonthChannelsExcel = async (req, res) => {
       LEFT JOIN networks mn ON mn.id = mc.network_id
       LEFT JOIN partners p ON p.id = mc.partner_id
       LEFT JOIN revenue_sharings rs ON rs.id = mc.revenue_sharing_id
-      WHERE cr.month = ?
+      WHERE cr.month IN (${monthPlaceholders})
       GROUP BY cr.channel_id
       ORDER BY total_revenue DESC, channel_title COLLATE NOCASE
-    `).all(month);
+    `).all(...months);
 
     if (!rows.length) {
-      return res.status(404).json({ success: false, message: `Không có dữ liệu channel cho tháng ${month}` });
+      const rangeText = isMultiMonth
+        ? `từ tháng ${months[0]} đến tháng ${months[months.length - 1]}`
+        : `tháng ${month}`;
+      return res.status(404).json({ success: false, message: `Không có dữ liệu channel cho ${rangeText}` });
+    }
+
+    const revenueByChannelMonth = new Map();
+    if (isMultiMonth) {
+      const monthlyRows = db.prepare(`
+        SELECT channel_id, month, SUM(revenue) AS revenue
+        FROM channel_revenues
+        WHERE month IN (${monthPlaceholders})
+        GROUP BY channel_id, month
+      `).all(...months);
+      for (const entry of monthlyRows) {
+        revenueByChannelMonth.set(`${entry.channel_id}|${entry.month}`, Number(entry.revenue || 0));
+      }
     }
 
     const networkNameById = new Map(db.prepare("SELECT id, name FROM networks").all().map((network) => [String(network.id), network.name]));
     const monthLabel = exportMonthFilePart(month);
+    const monthColumns = months.map((value, index) => ({
+      month: value,
+      key: `month_revenue_${index}`,
+      header: `Revenue ${exportMonthFilePart(value)}`
+    }));
     const workbook = new ExcelJS.Workbook();
     workbook.creator = getBrandNameForExport();
     workbook.created = new Date();
@@ -3397,7 +3440,8 @@ exports.exportMonthChannelsExcel = async (req, res) => {
       { header: "Subs", key: "subs", width: 14 },
       { header: "Views", key: "views", width: 16 },
       { header: "Videos", key: "videos", width: 12 },
-      { header: `Revenue ${monthLabel}`, key: "revenue", width: 18 }
+      ...monthColumns.map((column) => ({ header: column.header, key: column.key, width: 18 })),
+      ...(isMultiMonth ? [{ header: "Total Revenue", key: "total_revenue", width: 18 }] : [])
     ];
 
     sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -3415,6 +3459,12 @@ exports.exportMonthChannelsExcel = async (req, res) => {
         .filter(Boolean)
         .map((id) => networkNameById.get(id))
         .filter(Boolean);
+      const monthValues = {};
+      for (const column of monthColumns) {
+        monthValues[column.key] = isMultiMonth
+          ? revenueByChannelMonth.get(`${row.channel_id}|${column.month}`) || 0
+          : Number(row.total_revenue || 0);
+      }
       const added = sheet.addRow({
         no: index + 1,
         title: (isPlaceholder ? row.managed_title || row.channel_title : row.channel_title || row.managed_title) || row.channel_id,
@@ -3426,22 +3476,32 @@ exports.exportMonthChannelsExcel = async (req, res) => {
         subs: stat(row.channel_subscriber_count, row.managed_subscriber_count),
         views: stat(row.channel_view_count, row.managed_view_count),
         videos: stat(row.channel_video_count, row.managed_video_count),
-        revenue: Number(row.total_revenue || 0)
+        ...monthValues,
+        ...(isMultiMonth ? { total_revenue: Number(row.total_revenue || 0) } : {})
       });
       added.getCell("link").value = { text: link, hyperlink: link };
       added.getCell("link").font = { color: { argb: "FF1D4ED8" }, underline: true };
       added.getCell("subs").numFmt = "#,##0";
       added.getCell("views").numFmt = "#,##0";
       added.getCell("videos").numFmt = "#,##0";
-      added.getCell("revenue").numFmt = "#,##0.00";
+      for (const column of monthColumns) added.getCell(column.key).numFmt = "#,##0.00";
+      if (isMultiMonth) added.getCell("total_revenue").numFmt = "#,##0.00";
     });
 
+    const monthTotals = {};
+    for (const column of monthColumns) {
+      monthTotals[column.key] = isMultiMonth
+        ? rows.reduce((sum, row) => sum + (revenueByChannelMonth.get(`${row.channel_id}|${column.month}`) || 0), 0)
+        : rows.reduce((sum, row) => sum + Number(row.total_revenue || 0), 0);
+    }
     const totalRow = sheet.addRow({
       title: `Total (${rows.length} channels)`,
-      revenue: rows.reduce((sum, row) => sum + Number(row.total_revenue || 0), 0)
+      ...monthTotals,
+      ...(isMultiMonth ? { total_revenue: rows.reduce((sum, row) => sum + Number(row.total_revenue || 0), 0) } : {})
     });
     totalRow.font = { bold: true };
-    totalRow.getCell("revenue").numFmt = "#,##0.00";
+    for (const column of monthColumns) totalRow.getCell(column.key).numFmt = "#,##0.00";
+    if (isMultiMonth) totalRow.getCell("total_revenue").numFmt = "#,##0.00";
     totalRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
 
     sheet.eachRow((row, rowNumber) => {
@@ -3457,10 +3517,14 @@ exports.exportMonthChannelsExcel = async (req, res) => {
     });
 
     sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.autoFilter = `A1:K${rows.length + 1}`;
+    const lastColumnLetter = sheet.getColumn(sheet.columns.length).letter;
+    sheet.autoFilter = `A1:${lastColumnLetter}${rows.length + 1}`;
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `${[monthLabel, "all-channels", getBrandNameForExport()].map((part) => safeFileName(part)).filter(Boolean).join("-")}.xlsx`;
+    const rangeFilePart = isMultiMonth
+      ? `${exportMonthFilePart(months[0])}-to-${exportMonthFilePart(months[months.length - 1])}`
+      : monthLabel;
+    const fileName = `${[rangeFilePart, "all-channels", getBrandNameForExport()].map((part) => safeFileName(part)).filter(Boolean).join("-")}.xlsx`;
     setDownloadHeaders(res, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
     res.send(Buffer.from(buffer));
   } catch (error) {

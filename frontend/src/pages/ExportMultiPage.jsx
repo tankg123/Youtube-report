@@ -3,8 +3,35 @@ import { Check, Download, FileSpreadsheet, Loader2, Search } from "lucide-react"
 import api from "../api/api";
 import { useSystemSettings } from "../context/SystemSettingsContext";
 
+const ALL_CHANNEL_RANGE_OPTIONS = [
+  { value: "1", label: "Selected month only" },
+  { value: "2", label: "Last 2 months" },
+  { value: "3", label: "Last 3 months" },
+  { value: "6", label: "Last 6 months" },
+  { value: "12", label: "Last 12 months" },
+  { value: "year", label: "This year (Jan → selected month)" }
+];
+
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
+}
+
+function shiftMonth(month, offset) {
+  const [year, value] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, value - 1 + offset, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function allChannelsStartMonth(month, selection) {
+  if (selection === "year") return `${String(month).slice(0, 4)}-01`;
+  const count = Number.parseInt(selection, 10) || 1;
+  return shiftMonth(month, -(count - 1));
+}
+
+function allChannelsRangeLabel(month, selection) {
+  const start = allChannelsStartMonth(month, selection);
+  if (start === month) return monthLabel(month);
+  return `${monthLabel(start)} – ${monthLabel(month)}`;
 }
 
 function monthLabel(month) {
@@ -68,6 +95,7 @@ export default function ExportMultiPage() {
   const [companyId, setCompanyId] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
   const [format, setFormat] = useState("excel");
+  const [allChannelsMonths, setAllChannelsMonths] = useState("1");
   const [includeSignatures, setIncludeSignatures] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(true);
@@ -154,20 +182,25 @@ export default function ExportMultiPage() {
   async function exportAllChannels() {
     try {
       setExportingAll(true);
-      setMessage(`Exporting all channels for ${monthLabel(month)}...`);
-      const res = await api.post("/reports/manager/export-month-channels", { month }, {
+      const rangeLabel = allChannelsRangeLabel(month, allChannelsMonths);
+      setMessage(`Exporting all channels for ${rangeLabel}...`);
+      const res = await api.post("/reports/manager/export-month-channels", { month, months: allChannelsMonths }, {
         responseType: "blob",
         timeout: 120000
       });
       const headerFileName = filenameFromDisposition(res.headers?.["content-disposition"] || "");
-      const fallbackFileName = [exportMonthFilePart(month), "all-channels", settings?.brand_name || "ANS Network"]
+      const startMonth = allChannelsStartMonth(month, allChannelsMonths);
+      const rangeFilePart = startMonth === month
+        ? exportMonthFilePart(month)
+        : `${exportMonthFilePart(startMonth)}-to-${exportMonthFilePart(month)}`;
+      const fallbackFileName = [rangeFilePart, "all-channels", settings?.brand_name || "ANS Network"]
         .map(sanitizeFileName).filter(Boolean).join("-") + ".xlsx";
       downloadBlob(
         res.data,
         headerFileName || fallbackFileName,
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       );
-      setMessage(`Exported all channels for ${monthLabel(month)}.`);
+      setMessage(`Exported all channels for ${rangeLabel}.`);
     } catch (error) {
       setMessage(await exportErrorMessage(error, "Could not export all channels"));
     } finally {
@@ -240,13 +273,24 @@ export default function ExportMultiPage() {
             <h1 className="text-2xl font-black text-slate-900">Export Multi</h1>
             <p className="mt-1 text-sm text-slate-500">Choose multiple groups and export invoices for the selected month.</p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <select
+              value={allChannelsMonths}
+              onChange={(event) => setAllChannelsMonths(event.target.value)}
+              disabled={exportingAll}
+              title="Months included in the all-channels export: one revenue column per month"
+              className="rounded-2xl border border-blue-200 bg-white px-4 py-3 font-bold text-blue-700 shadow-sm disabled:opacity-50"
+            >
+              {ALL_CHANNEL_RANGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={exportAllChannels}
               disabled={exportingAll || exporting}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 shadow-sm disabled:opacity-50"
-              title={`Export every channel with revenue in ${monthLabel(month)} to Excel`}
+              title={`Export every channel with revenue in ${allChannelsRangeLabel(month, allChannelsMonths)} to Excel`}
             >
               {exportingAll ? <Loader2 className="animate-spin" size={18} /> : <FileSpreadsheet size={18} />}
               Export all channels

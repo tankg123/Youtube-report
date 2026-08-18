@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, FileAudio, Plus, Trash2 } from "lucide-react";
+import { Download, FileAudio, Loader2, PackageSearch, Plus, Trash2, TriangleAlert, Upload } from "lucide-react";
 import api from "../api/api";
 
 const GENRES = [
@@ -48,6 +48,34 @@ function downloadCsv(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
+function downloadBlob(data, filename, type) {
+  const blob = new Blob([data], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function filenameFromDisposition(disposition = "") {
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1] || "";
+}
+
+function formatMegabytes(bytes) {
+  return `${(Number(bytes || 0) / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function ContentIdCreatorPage() {
   const [rows, setRows] = useState([]);
   const [labels, setLabels] = useState([]);
@@ -61,6 +89,23 @@ export default function ContentIdCreatorPage() {
     ddex_party_id: "",
     album_artist: "",
     album_art_filename: ""
+  });
+
+  const [importCsv, setImportCsv] = useState("");
+  const [importFileName, setImportFileName] = useState("");
+  const [importAlbums, setImportAlbums] = useState([]);
+  const [importSummary, setImportSummary] = useState(null);
+  const [importMessage, setImportMessage] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [packagingKey, setPackagingKey] = useState("");
+  const [packagingProgress, setPackagingProgress] = useState(0);
+  const [importOptions, setImportOptions] = useState({
+    ownership: "WW",
+    match_policy: MATCH_POLICIES[0],
+    ddex_party_id: "",
+    include_audio: true,
+    include_artwork: true
   });
 
   const albumTitle = rows[0]?.album || "";
@@ -151,6 +196,118 @@ export default function ContentIdCreatorPage() {
     const lines = String(source || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     setRows((current) => current.map((row, index) => lines[index] ? { ...row, [field]: lines[index] } : row));
     setMessage(`Pasted ${lines.length} values into ${field}`);
+  }
+
+  function updateImportOption(field, value) {
+    setImportOptions((current) => ({ ...current, [field]: value }));
+  }
+
+  async function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Could not read the CSV file."));
+      reader.readAsText(file, "utf-8");
+    });
+  }
+
+  async function analyzeReport(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      setAnalyzing(true);
+      setImportMessage(`Reading ${file.name}...`);
+      const text = await readFileAsText(file);
+      const res = await api.post("/content-id/product-track/analyze", { csv: text }, { timeout: 120000 });
+      const albums = res.data.albums || [];
+
+      setImportCsv(text);
+      setImportFileName(file.name);
+      setImportAlbums(albums);
+      setImportSummary(res.data.summary || null);
+      setSelectedKeys(albums.map((album) => album.key));
+      setImportMessage(`Found ${albums.length} album${albums.length === 1 ? "" : "s"} and ${res.data.summary?.track_count || 0} tracks in ${file.name}.`);
+    } catch (error) {
+      setImportCsv("");
+      setImportAlbums([]);
+      setImportSummary(null);
+      setSelectedKeys([]);
+      setImportMessage(error.response?.data?.message || error.message || "Could not read this report.");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  function clearImport() {
+    setImportCsv("");
+    setImportFileName("");
+    setImportAlbums([]);
+    setImportSummary(null);
+    setSelectedKeys([]);
+    setImportMessage("");
+  }
+
+  function toggleAlbum(key) {
+    setSelectedKeys((current) => current.includes(key)
+      ? current.filter((item) => item !== key)
+      : [...current, key]);
+  }
+
+  function toggleAllAlbums() {
+    setSelectedKeys((current) => current.length === importAlbums.length ? [] : importAlbums.map((album) => album.key));
+  }
+
+  async function packageErrorMessage(error, fallback) {
+    if (error.response?.data instanceof Blob) {
+      const text = await error.response.data.text();
+      try {
+        return JSON.parse(text).message || fallback;
+      } catch {
+        return text || fallback;
+      }
+    }
+    return error.response?.data?.message || error.message || fallback;
+  }
+
+  async function downloadPackage(keys, busyKey, label) {
+    if (!importCsv) {
+      setImportMessage("Please import a ProductTrack report first.");
+      return;
+    }
+    if (!keys.length) {
+      setImportMessage("Please select at least one album.");
+      return;
+    }
+
+    try {
+      setPackagingKey(busyKey);
+      setPackagingProgress(0);
+      setImportMessage(`Preparing ${label}. Downloading audio and artwork from the media server, this can take a few minutes...`);
+
+      const res = await api.post(
+        "/content-id/product-track/package",
+        { csv: importCsv, keys, options: importOptions },
+        {
+          responseType: "blob",
+          timeout: 1800000,
+          onDownloadProgress: (progress) => setPackagingProgress(progress.loaded || 0)
+        }
+      );
+
+      const headerFileName = filenameFromDisposition(res.headers?.["content-disposition"] || "");
+      downloadBlob(res.data, headerFileName || "content-id-package.zip", "application/zip");
+      const skipped = Number(res.headers?.["x-package-skipped"] || 0);
+      setImportMessage(skipped
+        ? `Downloaded ${label} (${formatMegabytes(res.data.size)}). ${skipped} file(s) could not be fetched - see README-missing-files.txt inside the ZIP.`
+        : `Downloaded ${label} (${formatMegabytes(res.data.size)}).`);
+    } catch (error) {
+      setImportMessage(await packageErrorMessage(error, `Could not build the package for ${label}`));
+    } finally {
+      setPackagingKey("");
+      setPackagingProgress(0);
+    }
   }
 
   function buildCsvPayload() {
@@ -308,6 +465,166 @@ export default function ContentIdCreatorPage() {
             />
           </label>
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">
+              <PackageSearch size={14} /> Import ProductTrack report
+            </p>
+            <h2 className="mt-3 text-2xl font-black text-slate-950">Build album packages from a report</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Import a ProductTrack CSV export. Each album is packaged into a ZIP with its audio files, artwork and the
+              SoundRecordings + ArtTrack CSV files already filled in from the report.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className={`inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white ${analyzing ? "opacity-60" : "cursor-pointer"}`}>
+              {analyzing ? <Loader2 size={17} className="animate-spin" /> : <Upload size={17} />}
+              {analyzing ? "Reading..." : "Import report CSV"}
+              <input type="file" accept=".csv,text/csv" className="hidden" disabled={analyzing} onChange={analyzeReport} />
+            </label>
+            {importAlbums.length > 0 && (
+              <button onClick={clearImport} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">Clear import</button>
+            )}
+          </div>
+        </div>
+
+        {importMessage && (
+          <div className="mt-4 rounded-2xl bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-700">
+            {importMessage}
+            {packagingKey && packagingProgress > 0 && ` (${formatMegabytes(packagingProgress)} received)`}
+          </div>
+        )}
+
+        {importAlbums.length > 0 && (
+          <>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <label className="rounded-2xl border border-slate-200 px-4 py-3">
+                <span className="block text-xs font-black uppercase text-slate-400">Ownership</span>
+                <input
+                  value={importOptions.ownership}
+                  onChange={(event) => updateImportOption("ownership", event.target.value)}
+                  placeholder="WW"
+                  className="mt-1 w-full text-sm font-bold text-slate-900 outline-none"
+                />
+              </label>
+              <label className="rounded-2xl border border-slate-200 px-4 py-3">
+                <span className="block text-xs font-black uppercase text-slate-400">Match policy</span>
+                <select
+                  value={importOptions.match_policy}
+                  onChange={(event) => updateImportOption("match_policy", event.target.value)}
+                  className="mt-1 w-full bg-transparent text-sm font-bold text-slate-900 outline-none"
+                >
+                  {MATCH_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}
+                </select>
+              </label>
+              <label className="rounded-2xl border border-slate-200 px-4 py-3">
+                <span className="block text-xs font-black uppercase text-slate-400">ddex_party_id</span>
+                <input
+                  value={importOptions.ddex_party_id}
+                  onChange={(event) => updateImportOption("ddex_party_id", event.target.value)}
+                  placeholder="Optional"
+                  className="mt-1 w-full text-sm font-bold text-slate-900 outline-none"
+                />
+              </label>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-black text-slate-600">
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={importOptions.include_audio} onChange={(event) => updateImportOption("include_audio", event.target.checked)} />
+                Include audio files
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={importOptions.include_artwork} onChange={(event) => updateImportOption("include_artwork", event.target.checked)} />
+                Include artwork
+              </label>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importFileName}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importSummary?.album_count || 0} albums</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importSummary?.track_count || 0} tracks</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importSummary?.downloadable_tracks || 0} audio links</span>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+              <button onClick={toggleAllAlbums} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">
+                {selectedKeys.length === importAlbums.length ? "Unselect all" : "Select all"}
+              </button>
+              <button
+                onClick={() => downloadPackage(selectedKeys, "selected", `${selectedKeys.length} album${selectedKeys.length === 1 ? "" : "s"}`)}
+                disabled={!selectedKeys.length || Boolean(packagingKey)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
+              >
+                {packagingKey === "selected" ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />}
+                Download selected ({selectedKeys.length})
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {importAlbums.map((album) => (
+                <div
+                  key={album.key}
+                  className={`rounded-2xl border p-4 ${selectedKeys.includes(album.key) ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200 bg-white"}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.includes(album.key)}
+                      onChange={() => toggleAlbum(album.key)}
+                      className="mt-1"
+                    />
+                    {album.artwork_url ? (
+                      <img
+                        src={album.artwork_url}
+                        alt={album.album_title}
+                        loading="lazy"
+                        className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                        onError={(event) => { event.currentTarget.style.visibility = "hidden"; }}
+                      />
+                    ) : (
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                        <FileAudio size={20} />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black text-slate-950" title={album.album_title}>{album.album_title}</p>
+                      <p className="mt-0.5 truncate text-xs font-bold text-slate-500">
+                        {album.album_upc || "No UPC"} - {album.track_count} track{album.track_count === 1 ? "" : "s"}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">{album.album_artist} - {album.label}</p>
+                      <p className="mt-0.5 truncate text-xs text-slate-400">{album.genre} - {album.release_date}</p>
+                    </div>
+                  </div>
+
+                  <ul className="mt-3 space-y-1 text-xs text-slate-600">
+                    {album.tracks.slice(0, 4).map((track) => (
+                      <li key={`${album.key}-${track.isrc || track.source_id}`} className="truncate">
+                        {track.track_number}. {track.song_title} <span className="text-slate-400">{track.isrc}</span>
+                      </li>
+                    ))}
+                    {album.track_count > 4 && <li className="text-slate-400">+{album.track_count - 4} more</li>}
+                  </ul>
+
+                  {album.warnings.length > 0 && (
+                    <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+                      <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+                      <span>{album.warnings.join(" ")}</span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => downloadPackage([album.key], album.key, album.album_title)}
+                    disabled={Boolean(packagingKey)}
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
+                  >
+                    {packagingKey === album.key ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    {packagingKey === album.key ? "Packaging..." : "Download album ZIP"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">

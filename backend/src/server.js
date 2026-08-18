@@ -35,7 +35,8 @@ app.use(
   cors({
     origin: [FRONTEND_URL, "http://localhost:5173", "http://192.168.1.179:5173"],
     methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-api-key"]
+    allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
+    exposedHeaders: ["Content-Disposition", "X-Package-Skipped"]
   })
 );
 

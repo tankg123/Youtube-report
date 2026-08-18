@@ -30,6 +30,10 @@ const {
   updateLabel,
   updateCode
 } = require("../controllers/contentIdController");
+const {
+  analyzeProductTrackCsv,
+  packageAlbums
+} = require("../controllers/productTrackImportController");
 const { releaseVideoClaims, searchVideoClaims } = require("../controllers/claimController");
 const { authMiddleware, allowRoles } = require("../middlewares/authMiddleware");
 
@@ -72,6 +76,9 @@ router.get("/artists", allowRoles(...CONTENT_ID_ROLES), listArtists);
 router.post("/artists", allowRoles(...CONTENT_ID_ROLES), createArtist);
 router.put("/artists/:id", allowRoles(...CONTENT_ID_ROLES), updateArtist);
 router.delete("/artists/:id", allowRoles(...CONTENT_ID_ROLES), deleteArtist);
+
+router.post("/product-track/analyze", allowRoles(...CONTENT_ID_ROLES), analyzeProductTrackCsv);
+router.post("/product-track/package", allowRoles(...CONTENT_ID_ROLES), packageAlbums);
 
 router.get("/products", allowRoles(...CONTENT_ID_ROLES), listProducts);
 router.post("/products", allowRoles(...CONTENT_ID_ROLES), saveProduct);
