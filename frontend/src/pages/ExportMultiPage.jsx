@@ -97,7 +97,11 @@ export default function ExportMultiPage() {
   const [format, setFormat] = useState("excel");
   const [allChannelsMonths, setAllChannelsMonths] = useState("1");
   const [includeSignatures, setIncludeSignatures] = useState(false);
+  const [exportUsBr, setExportUsBr] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const revenueTaxEnabled = String(settings?.revenue_tax_us_br_enabled || "0") === "1";
+  // Effective flag from the server: global switch on AND the group has "Tính thuế US / BR" ticked.
+  const groupAppliesRevenueTax = (group) => Number(group?.summary?.apply_revenue_tax ?? 0) === 1;
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
@@ -218,6 +222,7 @@ export default function ExportMultiPage() {
       setExporting(true);
       setMessage(`Exporting ${selectedIds.length} group${selectedIds.length > 1 ? "s" : ""}...`);
       const selectedGroups = groups.filter((group) => selectedIds.includes(group.id));
+      let exportedWithUsBr = 0;
 
       for (const group of selectedGroups) {
         if (format === "pdf") {
@@ -236,9 +241,12 @@ export default function ExportMultiPage() {
             res.data.mimeType || "application/pdf"
           );
         } else {
+          const withUsBr = exportUsBr && revenueTaxEnabled && groupAppliesRevenueTax(group);
+          if (withUsBr) exportedWithUsBr += 1;
           const res = await api.post(`/reports/groups/${group.id}/export/excel`, {
             month,
-            company_id: companyId
+            company_id: companyId,
+            export_us_br: withUsBr
           }, {
             responseType: "blob",
             timeout: 60000
@@ -253,7 +261,10 @@ export default function ExportMultiPage() {
         await sleep(250);
       }
 
-      setMessage(`Exported ${selectedGroups.length} group${selectedGroups.length > 1 ? "s" : ""}.`);
+      setMessage(
+        `Exported ${selectedGroups.length} group${selectedGroups.length > 1 ? "s" : ""}.`
+        + (exportedWithUsBr > 0 ? ` ${exportedWithUsBr} with US/BR tax columns.` : "")
+      );
     } catch (error) {
       setMessage(await exportErrorMessage(error, "Could not export selected groups"));
     } finally {
@@ -356,6 +367,18 @@ export default function ExportMultiPage() {
                 {includeSignatures ? "Include sign boxes" : "No sign boxes"}
               </button>
             </label>
+            <label className={format === "excel" && revenueTaxEnabled ? "block" : "hidden"}>
+              <span className="mb-2 block text-xs font-black uppercase text-slate-400">US / BR tax columns</span>
+              <button
+                type="button"
+                onClick={() => setExportUsBr((value) => !value)}
+                title="Adds Revenue US, Tax US, Revenue BR and Tax BR to the Excel of every selected group that has US / BR tax enabled."
+                className={`flex w-full items-center gap-2 rounded-2xl border px-4 py-3 font-bold ${exportUsBr ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-600"}`}
+              >
+                <Check size={17} />
+                {exportUsBr ? "Add US/BR columns" : "No US/BR columns"}
+              </button>
+            </label>
             <label>
               <span className="mb-2 block text-xs font-black uppercase text-slate-400">Search</span>
               <div className="flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-3">
@@ -397,6 +420,11 @@ export default function ExportMultiPage() {
                     <div>
                       <p className="font-black text-slate-900">{group.group_name}</p>
                       <p className="mt-1 text-sm text-slate-500">{group.partner_name || "-"}</p>
+                      {revenueTaxEnabled && groupAppliesRevenueTax(group) && (
+                        <span className={`mt-2 inline-flex rounded-lg px-2 py-0.5 text-[11px] font-bold ${exportUsBr && format === "excel" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                          US/BR tax{exportUsBr && format === "excel" ? " · columns in Excel" : ""}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-3 text-right text-sm md:min-w-[420px]">

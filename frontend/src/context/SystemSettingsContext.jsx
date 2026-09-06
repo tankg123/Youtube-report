@@ -12,7 +12,8 @@ export const defaultSystemSettings = {
   web_title: "ANS Network",
   favicon_data_url: "",
   export_template_language: "vi",
-  ui_accent: DEFAULT_ACCENT_ID
+  ui_accent: DEFAULT_ACCENT_ID,
+  revenue_tax_us_br_enabled: "0"
 };
 
 function ensureFaviconLink() {

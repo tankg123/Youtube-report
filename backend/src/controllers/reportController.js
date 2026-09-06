@@ -7,6 +7,13 @@ const PDFDocument = require("pdfkit");
 const db = require("../config/database");
 const { getChannelFromYoutube, getChannelsFromYoutube, getQuotaStatus } = require("../services/youtubeService");
 const { generateGroupReconciliationExcel } = require("../services/reconciliationTemplateService");
+const {
+  isRevenueTaxEnabled,
+  groupAppliesRevenueTax,
+  revenueTaxAmounts,
+  revenueTaxSqlExpression,
+  toFlag
+} = require("../services/revenueTaxService");
 const cmsAuthService = require("../services/googleCmsAuthService");
 const { normalizedRoles } = require("../middlewares/authMiddleware");
 
@@ -197,33 +204,89 @@ function existingGroupChannelRows(groupId, channelIds = []) {
 }
 
 function parseMoney(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   const clean = String(value || "").replace(/[^0-9.-]/g, "");
-  return Number(clean || 0);
+  const parsed = Number(clean || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function safeNumber(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeHeaderCell(value) {
+  return String(value || "")
+    .toLowerCase()
+    // "U.S." is the country; "US$", "$US", "US-Dollar" and "US dollars" mark the currency, not the US share of the revenue.
+    .replace(/\bu\.s\.?(?![a-z])/g, "us")
+    .replace(/\bus[\s-]*\$|\$[\s-]*us\b|\bus[\s-]+dollars?\b/g, " usd ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findHeaderIndex(header, matcher) {
+  return header.findIndex((cell) => matcher(normalizeHeaderCell(cell)));
+}
+
+function isRevenueHeader(cell) {
+  return /\brevenues?\b/.test(cell) || cell.includes("doanh");
+}
+
+function isRevenueUsHeader(cell) {
+  return isRevenueHeader(cell)
+    && /\b(us|usa)\b/.test(cell)
+    && !/\b(non|ex|excl|excluding|outside)\s+(us|usa)\b/.test(cell);
+}
+
+function isRevenueBrHeader(cell) {
+  return isRevenueHeader(cell)
+    && /\b(br|bra|brazil|brasil)\b/.test(cell)
+    && !/\b(non|ex|excl|excluding|outside)\s+(br|bra|brazil|brasil)\b/.test(cell);
 }
 
 function normalizeRows(rows) {
   if (!rows.length) return [];
 
-  const header = rows[0].map((cell) => String(cell || "").toLowerCase());
-  let channelIndex = header.findIndex((cell) => cell.includes("channel") && cell.includes("id"));
-  let revenueIndex = header.findIndex((cell) => cell.includes("revenue") || cell.includes("doanh"));
+  const header = rows[0].map((cell) => String(cell || ""));
+  let channelIndex = findHeaderIndex(header, (cell) => cell.includes("channel") && cell.includes("id"));
+  // Same first-match rule as before; the only difference is that a column tagged US / BR is not the total revenue.
+  let revenueIndex = findHeaderIndex(header, (cell) =>
+    (cell.includes("revenue") || cell.includes("doanh")) && !isRevenueUsHeader(cell) && !isRevenueBrHeader(cell)
+  );
+  const hasUntaggedRevenueColumn = revenueIndex >= 0;
+  if (!hasUntaggedRevenueColumn) {
+    revenueIndex = findHeaderIndex(header, (cell) => cell.includes("revenue") || cell.includes("doanh"));
+  }
+  // Without an untagged total column the tagged columns cannot be portions of it: they are imported as plain revenue.
+  let revenueUsIndex = hasUntaggedRevenueColumn ? findHeaderIndex(header, (cell) => isRevenueUsHeader(cell)) : -1;
+  let revenueBrIndex = hasUntaggedRevenueColumn ? findHeaderIndex(header, (cell) => isRevenueBrHeader(cell)) : -1;
   const dataRows = channelIndex >= 0 && revenueIndex >= 0 ? rows.slice(1) : rows;
 
   if (channelIndex < 0) channelIndex = 0;
   if (revenueIndex < 0) revenueIndex = 1;
+  // The US / BR portion can never be the same column as the total revenue.
+  if (revenueUsIndex === revenueIndex) revenueUsIndex = -1;
+  if (revenueBrIndex === revenueIndex) revenueBrIndex = -1;
 
   const totals = new Map();
 
   for (const row of dataRows) {
     const channelId = normalizeChannelId(row[channelIndex]);
     const revenue = parseMoney(row[revenueIndex]);
+    const revenueUs = revenueUsIndex >= 0 ? parseMoney(row[revenueUsIndex]) : 0;
+    const revenueBr = revenueBrIndex >= 0 ? parseMoney(row[revenueBrIndex]) : 0;
 
     if (channelId) {
-      totals.set(channelId, (totals.get(channelId) || 0) + revenue);
+      const current = totals.get(channelId) || { revenue: 0, revenue_us: 0, revenue_br: 0 };
+      current.revenue += revenue;
+      current.revenue_us += revenueUs;
+      current.revenue_br += revenueBr;
+      totals.set(channelId, current);
     }
   }
 
-  return [...totals.entries()].map(([channel_id, revenue]) => ({ channel_id, revenue }));
+  return [...totals.entries()].map(([channel_id, values]) => ({ channel_id, ...values }));
 }
 
 function parseChannel(row) {
@@ -424,12 +487,14 @@ function exchangeFactor(currency = "USD", month = "") {
   return { factor: 1, rate: null, missing: false };
 }
 
-function groupRevenueTotalUsd(groupId, month = "") {
+function groupRevenueTotalUsd(groupId, month = "", appliesRevenueTax = false) {
+  // When the group withholds US / BR tax, tiers are evaluated on the after-tax share base.
+  const revenueExpression = appliesRevenueTax ? revenueTaxSqlExpression("cr") : "cr.revenue";
   const row = db.prepare(`
-    SELECT COALESCE(SUM(cr.revenue), 0) AS total_revenue
+    SELECT COALESCE(SUM(${revenueExpression}), 0) AS total_revenue
     FROM group_channels gc
     LEFT JOIN (
-      SELECT channel_id, month, SUM(revenue) AS revenue
+      SELECT channel_id, month, SUM(revenue) AS revenue, SUM(revenue_us) AS revenue_us, SUM(revenue_br) AS revenue_br
       FROM channel_revenues
       WHERE month = ?
       GROUP BY channel_id, month
@@ -443,7 +508,7 @@ function groupRevenueTotalUsd(groupId, month = "") {
 function groupDefaultShare(groupId, month = "") {
   const group = parseGroup(db.prepare("SELECT * FROM channel_groups WHERE id = ?").get(groupId));
   if (!group) return 0;
-  return tierRate(group.tiers, groupRevenueTotalUsd(groupId, month));
+  return tierRate(group.tiers, groupRevenueTotalUsd(groupId, month, groupAppliesRevenueTax(group)));
 }
 
 function existingShareForChannel(channelId, month = "", excludeGroupId = null, ownerType = null) {
@@ -489,9 +554,13 @@ function groupDetail(groupId, month) {
   }
 
   const conversion = exchangeFactor(group.currency, month);
+  const revenueTaxEnabled = isRevenueTaxEnabled();
+  const appliesRevenueTax = groupAppliesRevenueTax(group, revenueTaxEnabled);
   const channels = db.prepare(`
     SELECT gc.id AS group_channel_id, gc.custom_share, gc.custom_share_override, gc.channel_id AS group_channel_ref,
            c.*, COALESCE(cr.revenue, 0) AS revenue,
+           COALESCE(cr.revenue_us, 0) AS revenue_us,
+           COALESCE(cr.revenue_br, 0) AS revenue_br,
            COALESCE(NULLIF(cr.network_name, ''), mn.name, '-') AS network_name
     FROM group_channels gc
     LEFT JOIN channels c ON c.channel_id = gc.channel_id
@@ -502,6 +571,8 @@ function groupDetail(groupId, month) {
         cr.channel_id,
         cr.month,
         SUM(cr.revenue) AS revenue,
+        SUM(cr.revenue_us) AS revenue_us,
+        SUM(cr.revenue_br) AS revenue_br,
         GROUP_CONCAT(DISTINCT COALESCE(n.name, '-')) AS network_name
       FROM channel_revenues cr
       LEFT JOIN networks n ON n.id = cr.network_id
@@ -519,6 +590,8 @@ function groupDetail(groupId, month) {
       status: row.status || "error",
       status_error: row.status_error || "Không lấy được dữ liệu từ YouTube",
       network_name: row.network_name || "-",
+      revenue_us: Number(row.revenue_us || 0),
+      revenue_br: Number(row.revenue_br || 0),
       revenue_usd: revenueUsd,
       revenue: revenueUsd * conversion.factor,
       applied_share: rate
@@ -527,22 +600,38 @@ function groupDetail(groupId, month) {
 
   const totalRevenueUsd = channels.reduce((sum, channel) => sum + Number(channel.revenue_usd || 0), 0);
   const totalRevenueConverted = totalRevenueUsd * conversion.factor;
-  const defaultRate = tierRate(group.tiers, totalRevenueUsd);
+  // US / BR withholding (when enabled for this group) is removed from the revenue before the share rate is applied.
+  const taxedChannels = channels.map((channel) => {
+    const revenueUsd = Number(channel.revenue_usd || 0);
+    const tax = revenueTaxAmounts(channel, appliesRevenueTax);
+    return { ...channel, ...tax, share_base_usd: revenueUsd - tax.total_tax_usd };
+  });
+  const totalShareBaseUsd = taxedChannels.reduce((sum, channel) => sum + Number(channel.share_base_usd || 0), 0);
+  const defaultRate = tierRate(group.tiers, totalShareBaseUsd);
   const useTierRate = hasRevenueTiers(group.tiers);
-  const channelRows = channels.map((channel) => {
+  const channelRows = taxedChannels.map((channel) => {
     const rate = useTierRate ? defaultRate : channel.applied_share ?? 0;
-    const shareAmountUsd = Number(channel.revenue_usd || 0) * rate / 100;
+    const revenueUsd = Number(channel.revenue_usd || 0);
+    const shareBaseUsd = Number(channel.share_base_usd || 0);
+    const shareAmountUsd = shareBaseUsd * rate / 100;
     return {
       ...channel,
       applied_share: rate,
-      revenue: Number(channel.revenue_usd || 0),
-      revenue_converted: Number(channel.revenue_usd || 0) * conversion.factor,
+      revenue: revenueUsd,
+      revenue_converted: revenueUsd * conversion.factor,
+      share_base_usd: shareBaseUsd,
+      share_base_converted: shareBaseUsd * conversion.factor,
       share_amount: shareAmountUsd,
       share_amount_converted: shareAmountUsd * conversion.factor,
       paid: shareAmountUsd * conversion.factor
     };
   });
   const paidUsd = channelRows.reduce((sum, channel) => sum + channel.share_amount, 0);
+  const totalRevenueUs = channelRows.reduce((sum, channel) => sum + Number(channel.revenue_us || 0), 0);
+  const totalRevenueBr = channelRows.reduce((sum, channel) => sum + Number(channel.revenue_br || 0), 0);
+  const totalTaxUs = channelRows.reduce((sum, channel) => sum + Number(channel.tax_us || 0), 0);
+  const totalTaxBr = channelRows.reduce((sum, channel) => sum + Number(channel.tax_br || 0), 0);
+  const totalTaxUsd = totalTaxUs + totalTaxBr;
   const paidConverted = paidUsd * conversion.factor;
   const feeRate = Number(group.fee_rate || 0);
   const feeUsd = paidUsd * feeRate / 100;
@@ -588,7 +677,17 @@ function groupDetail(groupId, month) {
       rows: channelRows.filter((channel) => Number(channel.revenue_usd || 0) > 0).length,
       default_rate: defaultRate,
       tier_currency: "USD",
-      tier_revenue_usd: totalRevenueUsd
+      tier_revenue_usd: totalShareBaseUsd,
+      revenue_tax_enabled: revenueTaxEnabled ? 1 : 0,
+      apply_revenue_tax: appliesRevenueTax ? 1 : 0,
+      revenue_us: totalRevenueUs,
+      revenue_br: totalRevenueBr,
+      tax_us: totalTaxUs,
+      tax_br: totalTaxBr,
+      total_tax_usd: totalTaxUsd,
+      total_tax_converted: totalTaxUsd * conversion.factor,
+      share_base_usd: totalShareBaseUsd,
+      share_base_converted: totalShareBaseUsd * conversion.factor
     }
   };
 }
@@ -900,7 +999,8 @@ function buildReconciliationWorkbook(detail, company) {
 
 async function sendExcelExport(res, detail, company, options = {}) {
   const language = getExportTemplateLanguage(options.language);
-  const buffer = await generateGroupReconciliationExcel(detail, company, { language });
+  const exportUsBr = toFlag(options.export_us_br) === 1 && isRevenueTaxEnabled();
+  const buffer = await generateGroupReconciliationExcel(detail, company, { language, export_us_br: exportUsBr });
   const fileName = groupExportFileName(detail, "xlsx");
   setDownloadHeaders(res, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
   res.send(buffer);
@@ -1224,16 +1324,22 @@ exports.importManagerReport = async (req, res) => {
 
     const foundIds = new Set(youtubeChannels.map((channel) => channel.channel_id));
     const saveRevenue = db.prepare(`
-      INSERT INTO channel_revenues (month, network_id, channel_id, revenue, source_file, import_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO channel_revenues (
+        month, network_id, channel_id, revenue, revenue_us, revenue_br, source_file, import_id, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(month, network_id, channel_id) DO UPDATE SET
         revenue = excluded.revenue,
+        revenue_us = excluded.revenue_us,
+        revenue_br = excluded.revenue_br,
         source_file = excluded.source_file,
         import_id = excluded.import_id,
         updated_at = CURRENT_TIMESTAMP
     `);
     const missingChannels = rows.filter((row) => !foundIds.has(row.channel_id)).map((row) => row.channel_id);
-    const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
+    const totalRevenue = rows.reduce((sum, row) => sum + safeNumber(row.revenue), 0);
+    const totalRevenueUs = rows.reduce((sum, row) => sum + safeNumber(row.revenue_us), 0);
+    const totalRevenueBr = rows.reduce((sum, row) => sum + safeNumber(row.revenue_br), 0);
 
     const transaction = db.transaction(() => {
       const importResult = db.prepare(`
@@ -1252,7 +1358,16 @@ exports.importManagerReport = async (req, res) => {
         );
       }
       for (const row of rows) {
-        saveRevenue.run(month, network.id, row.channel_id, row.revenue, fileName || "", importId);
+        saveRevenue.run(
+          month,
+          network.id,
+          row.channel_id,
+          safeNumber(row.revenue),
+          safeNumber(row.revenue_us),
+          safeNumber(row.revenue_br),
+          fileName || "",
+          importId
+        );
         seedChannelNetwork(row.channel_id, network.id, month);
       }
 
@@ -1279,7 +1394,9 @@ exports.importManagerReport = async (req, res) => {
               details: youtubeError.youtube || null
             }
           : null,
-        total_revenue: totalRevenue
+        total_revenue: totalRevenue,
+        total_revenue_us: totalRevenueUs,
+        total_revenue_br: totalRevenueBr
       }
     });
   } catch (error) {
@@ -1325,7 +1442,9 @@ exports.getReportSummary = (req, res) => {
         rows,
         history,
         total_rows: rows.length,
-        total_revenue: rows.reduce((sum, row) => sum + Number(row.revenue || 0), 0)
+        total_revenue: rows.reduce((sum, row) => sum + safeNumber(row.revenue), 0),
+        total_revenue_us: rows.reduce((sum, row) => sum + safeNumber(row.revenue_us), 0),
+        total_revenue_br: rows.reduce((sum, row) => sum + safeNumber(row.revenue_br), 0)
       }
     });
   } catch (error) {
@@ -1427,7 +1546,13 @@ function dashboardGroupTotals(month = "") {
       const feeMultiplier = 1 - Number(detail.summary?.fee_rate || 0) / 100;
       for (const channel of detail.channels || []) {
         const channelShareUsd = Number(channel.share_amount || 0);
-        const appliedShareRate = Number(channel.applied_share || 0);
+        const channelRevenueUsd = Number(channel.revenue_usd || 0);
+        const channelTaxUsd = Number(channel.total_tax_usd || 0);
+        // With US / BR withholding the effective rate is share / revenue, so per-network paid still matches the group's
+        // paid (also for negative adjustment months). Without tax the original rate is used unchanged.
+        const appliedShareRate = channelTaxUsd !== 0 && Math.abs(channelRevenueUsd) > 1e-9
+          ? channelShareUsd / channelRevenueUsd * 100
+          : Number(channel.applied_share || 0);
         if (!channel.channel_id) continue;
 
         const revenueRows = channelRevenueByNetwork.all(itemMonth, channel.channel_id)
@@ -3242,9 +3367,9 @@ exports.createGroup = (req, res) => {
     }
 
     const result = db.prepare(`
-      INSERT INTO channel_groups (partner_id, collaborator_id, group_name, currency, fee_rate, description, tiers)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(owner.partnerId, owner.collaboratorId, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), data.description || "", JSON.stringify(data.tiers || []));
+      INSERT INTO channel_groups (partner_id, collaborator_id, group_name, currency, fee_rate, apply_revenue_tax, description, tiers)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(owner.partnerId, owner.collaboratorId, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), toFlag(data.apply_revenue_tax), data.description || "", JSON.stringify(data.tiers || []));
 
     let message = "Đã tạo group";
     let syncResult = null;
@@ -3289,11 +3414,14 @@ exports.updateGroup = (req, res) => {
       }
     }
 
+    const applyRevenueTax = data.apply_revenue_tax === undefined
+      ? toFlag(current.apply_revenue_tax)
+      : toFlag(data.apply_revenue_tax);
     db.prepare(`
       UPDATE channel_groups SET partner_id = ?, collaborator_id = ?, group_name = ?, currency = ?, fee_rate = ?,
-        description = ?, tiers = ?, updated_at = CURRENT_TIMESTAMP
+        apply_revenue_tax = ?, description = ?, tiers = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(owner.partnerId, owner.collaboratorId, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), data.description || "", JSON.stringify(data.tiers || []), req.params.id);
+    `).run(owner.partnerId, owner.collaboratorId, data.group_name, normalizeCurrency(data.currency), Number(data.fee_rate || 0), applyRevenueTax, data.description || "", JSON.stringify(data.tiers || []), req.params.id);
 
     res.json({ success: true, message: "Đã cập nhật group" });
   } catch (error) {
@@ -3333,7 +3461,8 @@ exports.exportGroupExcel = async (req, res) => {
     const detail = groupDetail(req.params.id, String(req.body?.month || req.query.month || ""));
     if (!detail) return res.status(404).json({ success: false, message: "Group not found" });
     await sendExcelExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id), {
-      language: req.body?.template_language || req.query.template_language
+      language: req.body?.template_language || req.query.template_language,
+      export_us_br: req.body?.export_us_br ?? req.query.export_us_br
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not export Excel", error: error.message });

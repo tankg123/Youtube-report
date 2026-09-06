@@ -1,4 +1,5 @@
 const db = require("../config/database");
+const { REVENUE_TAX_SETTING_KEY, toFlag } = require("../services/revenueTaxService");
 
 const DEFAULT_SETTINGS = {
   brand_name: "ANS Network",
@@ -8,7 +9,8 @@ const DEFAULT_SETTINGS = {
   web_title: "ANS Network",
   favicon_data_url: "",
   export_template_language: "vi",
-  ui_accent: "mint"
+  ui_accent: "mint",
+  revenue_tax_us_br_enabled: "0"
 };
 
 const UI_ACCENTS = new Set(["mint", "orange", "blue", "violet", "rose", "teal"]);
@@ -20,6 +22,7 @@ function rowsToSettings(rows) {
   }, { ...DEFAULT_SETTINGS });
 
   settings.ui_accent = UI_ACCENTS.has(settings.ui_accent) ? settings.ui_accent : DEFAULT_SETTINGS.ui_accent;
+  settings[REVENUE_TAX_SETTING_KEY] = toFlag(settings[REVENUE_TAX_SETTING_KEY]) ? "1" : "0";
   return settings;
 }
 
@@ -66,6 +69,10 @@ function normalizeSettings(body) {
   if (Object.prototype.hasOwnProperty.call(body, "ui_accent")) {
     const accent = String(body.ui_accent || "").trim().toLowerCase();
     next.ui_accent = UI_ACCENTS.has(accent) ? accent : DEFAULT_SETTINGS.ui_accent;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, REVENUE_TAX_SETTING_KEY)) {
+    next[REVENUE_TAX_SETTING_KEY] = toFlag(body[REVENUE_TAX_SETTING_KEY]) ? "1" : "0";
   }
 
   return next;

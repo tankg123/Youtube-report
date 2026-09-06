@@ -13,6 +13,7 @@ const emptyGroup = {
   group_name: "",
   currency: "USD",
   fee_rate: 0,
+  apply_revenue_tax: false,
   description: "",
   tiers: []
 };
@@ -597,7 +598,7 @@ function exportGroupPdf(group, company = fallbackCompany) {
   win.document.close();
 }
 
-function GroupForm({ partners, collaborators, isEditing, value, onChange }) {
+function GroupForm({ partners, collaborators, isEditing, value, onChange, revenueTaxEnabled = false }) {
   const [partnerSearch, setPartnerSearch] = useState("");
   const [partnerSelectOpen, setPartnerSelectOpen] = useState(false);
   const ownerType = value.owner_type === "collaborator" ? "collaborator" : "partner";
@@ -762,6 +763,20 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange }) {
           <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Mô tả</span>
           <input value={value.description} onChange={(e) => onChange({ ...value, description: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder="Mô tả ngắn về group này..." />
         </label>
+        {revenueTaxEnabled && (
+          <label className="flex min-h-[62px] cursor-pointer items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3">
+            <input
+              type="checkbox"
+              checked={Boolean(value.apply_revenue_tax)}
+              onChange={(e) => onChange({ ...value, apply_revenue_tax: e.target.checked })}
+              className="h-5 w-5 rounded border-slate-300 text-emerald-600"
+            />
+            <span>
+              <span className="block text-sm font-black text-slate-900">Tính thuế US / BR</span>
+              <span className="block text-xs text-slate-500">Trừ US 30% và Brazil 14% trước khi chia sharing.</span>
+            </span>
+          </label>
+        )}
       </div>
 
       {ownerType === "collaborator" && !isEditing && (
@@ -860,6 +875,7 @@ export default function GroupChannelPage() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [includeSignatureBoxes, setIncludeSignatureBoxes] = useState(false);
+  const [exportUsBr, setExportUsBr] = useState(false);
   const [groupListCollapsed, setGroupListCollapsed] = useState(false);
   const [groupSearch, setGroupSearch] = useState("");
   const [groupSortDirection, setGroupSortDirection] = useState("asc");
@@ -867,6 +883,12 @@ export default function GroupChannelPage() {
   const [channelSearch, setChannelSearch] = useState("");
   const queryGroupId = searchParams.get("group_id");
   const queryMonth = searchParams.get("month");
+  const revenueTaxEnabled = String(settings?.revenue_tax_us_br_enabled || "0") === "1";
+  // The loaded group carries the server's effective flags; the cached setting only fills in when none is loaded.
+  const detailRevenueTaxEnabled = detail?.summary?.revenue_tax_enabled !== undefined
+    ? Number(detail.summary.revenue_tax_enabled) === 1
+    : revenueTaxEnabled;
+  const detailUsesRevenueTax = Number(detail?.summary?.apply_revenue_tax ?? 0) === 1;
 
   function toggleChannelSort(key) {
     setChannelSort((current) => ({
@@ -987,6 +1009,7 @@ export default function GroupChannelPage() {
       group_name: detail.group_name,
       currency: detail.currency,
       fee_rate: detail.fee_rate ?? 0,
+      apply_revenue_tax: Number(detail.apply_revenue_tax || 0) === 1,
       description: detail.description || "",
       tiers: detail.tiers?.length ? detail.tiers : []
     });
@@ -1017,6 +1040,7 @@ export default function GroupChannelPage() {
         collaborator_id: isCollaboratorGroup ? groupForm.collaborator_id : "",
         month,
         fee_rate: Number(groupForm.fee_rate || 0),
+        apply_revenue_tax: groupForm.apply_revenue_tax ? 1 : 0,
         tiers: groupForm.tiers.map((tier) => ({
           min: Number(tier.min || 0),
           max: Number(tier.max || 0),
@@ -1187,7 +1211,8 @@ export default function GroupChannelPage() {
 
       const res = await api.post(`/reports/groups/${detail.id}/export/${format}`, {
         month,
-        company_id: selectedCompanyId || selectedCompany()?.id || ""
+        company_id: selectedCompanyId || selectedCompany()?.id || "",
+        export_us_br: detailRevenueTaxEnabled && exportUsBr
       }, {
         responseType: "blob",
         timeout: 60000,
@@ -1416,6 +1441,11 @@ export default function GroupChannelPage() {
                     <p className="text-slate-500"><b className="text-slate-800">Account:</b> {detail.account_number || "-"}</p>
                     <p className="text-slate-500"><b className="text-slate-800">Currency:</b> {detail.currency}</p>
                     <p className="text-slate-500"><b className="text-slate-800">Fee:</b> {detail.fee_rate || 0}%</p>
+                    {detailRevenueTaxEnabled && (
+                      <p className="text-slate-500">
+                        <b className="text-slate-800">Revenue tax:</b> {detailUsesRevenueTax ? "US 30% / BR 14%" : "Off"}
+                      </p>
+                    )}
                     {detail.currency !== "USD" && (
                       <p className={detail.exchange_rate?.missing ? "text-red-600" : "text-slate-500"}>
                         <b className="text-slate-800">Exchange:</b> 1 USD = {detail.exchange_rate?.factor || 1} {detail.currency}
@@ -1444,6 +1474,13 @@ export default function GroupChannelPage() {
                       <b className="text-red-600">{converted(detail.summary.fee_converted ?? 0, detail.currency)}</b>
                       <small className="block text-slate-500 mt-1">{detail.summary.fee_rate ?? detail.fee_rate ?? 0}%</small>
                     </p>
+                    {detailUsesRevenueTax && (
+                      <p>
+                        <span className="text-xs text-slate-500 block">Tax US / BR</span>
+                        <b className="text-red-600">{usd(detail.summary.total_tax_usd ?? 0)}</b>
+                        <small className="block text-slate-500 mt-1">US {usd(detail.summary.tax_us ?? 0)} / BR {usd(detail.summary.tax_br ?? 0)}</small>
+                      </p>
+                    )}
                     <p>
                       <span className="text-xs text-slate-500 block">Payable</span>
                       <b className="text-emerald-700">{converted(detail.summary.payable_converted ?? detail.summary.paid_converted ?? detail.summary.paid, detail.currency)}</b>
@@ -1512,6 +1549,12 @@ export default function GroupChannelPage() {
                           <th className="text-right px-5 py-3">
                             <SortButton label="Revenue USD" active={channelSort.key === "revenue"} direction={channelSort.direction} onClick={() => toggleChannelSort("revenue")} align="right" />
                           </th>
+                          {detailUsesRevenueTax && (
+                            <>
+                              <th className="text-right px-5 py-3">Revenue US</th>
+                              <th className="text-right px-5 py-3">Revenue BR</th>
+                            </>
+                          )}
                           <th className="text-right px-5 py-3">
                             <SortButton label="Share Amount USD" active={channelSort.key === "share"} direction={channelSort.direction} onClick={() => toggleChannelSort("share")} align="right" />
                           </th>
@@ -1524,7 +1567,7 @@ export default function GroupChannelPage() {
                       <tbody className="divide-y divide-slate-100">
                         {sortedDetailChannels.length === 0 && (
                           <tr>
-                            <td colSpan={canViewReports ? 5 : 4} className="px-5 py-10 text-center text-slate-500">
+                            <td colSpan={(canViewReports ? 5 : 4) + (detailUsesRevenueTax ? 2 : 0)} className="px-5 py-10 text-center text-slate-500">
                               No channels match this search.
                             </td>
                           </tr>
@@ -1563,6 +1606,18 @@ export default function GroupChannelPage() {
                               </div>
                             </td>
                             <td className="px-5 py-4 text-right font-black">{usd(channel.revenue_usd ?? channel.revenue)}</td>
+                            {detailUsesRevenueTax && (
+                              <>
+                                <td className="px-5 py-4 text-right">
+                                  <p className="font-black text-blue-700">{usd(channel.revenue_us || 0)}</p>
+                                  <p className="mt-1 text-[11px] font-bold text-red-500">tax us: {usd(channel.tax_us || 0)}</p>
+                                </td>
+                                <td className="px-5 py-4 text-right">
+                                  <p className="font-black text-indigo-700">{usd(channel.revenue_br || 0)}</p>
+                                  <p className="mt-1 text-[11px] font-bold text-red-500">tax br: {usd(channel.tax_br || 0)}</p>
+                                </td>
+                              </>
+                            )}
                             <td className="px-5 py-4 text-right font-black text-slate-900">{usd(channel.share_amount)}</td>
                             <td className="px-5 py-4 text-right font-black text-emerald-700">{converted(channel.paid ?? channel.share_amount_converted ?? channel.share_amount, detail.currency)}</td>
                             {canViewReports && (
@@ -1593,7 +1648,7 @@ export default function GroupChannelPage() {
               <button type="button" onClick={() => setGroupModal(false)} className="w-10 h-10 rounded-xl border border-slate-300 flex items-center justify-center"><X size={18} /></button>
             </div>
             <div className="p-6">
-              <GroupForm partners={partners} collaborators={collaborators} isEditing={Boolean(editing)} value={groupForm} onChange={setGroupForm} />
+              <GroupForm partners={partners} collaborators={collaborators} isEditing={Boolean(editing)} value={groupForm} onChange={setGroupForm} revenueTaxEnabled={revenueTaxEnabled} />
             </div>
             <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3">
               <button type="button" onClick={() => setGroupModal(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Hủy</button>
@@ -1702,6 +1757,20 @@ export default function GroupChannelPage() {
                   <span className="block text-sm text-slate-500 mt-1">Add company and partner signature areas with Sign, Name, and Title lines.</span>
                 </span>
               </label>
+              {detailRevenueTaxEnabled && (
+                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={exportUsBr}
+                    onChange={(event) => setExportUsBr(event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-slate-300"
+                  />
+                  <span>
+                    <span className="block font-black text-slate-900">Export US - BR in Excel</span>
+                    <span className="block text-sm text-slate-500 mt-1">Add Revenue US, Tax US, Revenue BR, and Tax BR beside Revenue Total.</span>
+                  </span>
+                </label>
+              )}
             </div>
             <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3">
               <button type="button" onClick={() => setExportModalOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Cancel</button>

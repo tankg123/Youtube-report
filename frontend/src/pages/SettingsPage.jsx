@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, ImageUp, Loader2, MonitorCog, Palette, Save, Sparkles, Upload } from "lucide-react";
+import { Check, ImageUp, Loader2, MonitorCog, Palette, Percent, Save, Sparkles, Upload } from "lucide-react";
 import api from "../api/api";
 import { useSystemSettings } from "../context/SystemSettingsContext";
 import { useI18n } from "../context/I18nContext";
@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
   const useUploadedLogo = form.logo_mode === "upload" && form.logo_data_url;
   const selectedAccent = getAccentPalette(form.ui_accent);
+  const revenueTaxEnabled = String(form.revenue_tax_us_br_enabled || "0") === "1";
 
   useEffect(() => {
     setForm(settings);
@@ -194,6 +195,38 @@ export default function SettingsPage() {
                   </button>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:p-6">
+            <div className="flex items-start gap-3">
+              <div className="ui-soft flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl">
+                <Percent size={21} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-black text-slate-950">US / BR revenue tax</h2>
+                  <span className="ui-soft rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider">Revenue sharing</span>
+                </div>
+                <p className="mt-1 text-sm font-semibold text-slate-500">
+                  Withhold US 30% and Brazil 14% from channel revenue before the share rate is applied. Each group opts in separately,
+                  Manager Report accepts Revenue US / Revenue BR columns, and Excel exports can add the tax columns.
+                </p>
+                <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                  <input
+                    type="checkbox"
+                    checked={revenueTaxEnabled}
+                    onChange={(event) => setForm({ ...form, revenue_tax_us_br_enabled: event.target.checked ? "1" : "0" })}
+                    className="mt-1 h-4 w-4 rounded border-slate-300"
+                  />
+                  <span>
+                    <span className="block font-black text-slate-900">Enable US / BR tax calculation</span>
+                    <span className="mt-1 block text-sm text-slate-500">
+                      When off, every group is calculated without tax, even if the group has the tax option ticked.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
           </section>
 

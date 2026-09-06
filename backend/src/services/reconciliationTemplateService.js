@@ -522,6 +522,192 @@ function findItemsTemplateRow(ws) {
   return found;
 }
 
+const REVENUE_TAX_EXPORT_COLUMNS = [
+  { header: "Revenue US", placeholder: "${table.items.revenue_us}" },
+  { header: "Tax US", placeholder: "${table.items.tax_us}" },
+  { header: "Revenue BR", placeholder: "${table.items.revenue_br}" },
+  { header: "Tax BR", placeholder: "${table.items.tax_br}" }
+];
+
+function isMergeSlaveCell(cell) {
+  return cell.type === ExcelJS.ValueType.Merge;
+}
+
+function cloneCellValue(value) {
+  if (value == null) return value;
+  if (value instanceof Date) return new Date(value.getTime());
+  if (typeof value !== "object") return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function cloneStyle(sourceCell, targetCell) {
+  targetCell.style = JSON.parse(JSON.stringify(sourceCell.style || {}));
+  targetCell.numFmt = sourceCell.numFmt;
+}
+
+function copyCell(sourceCell, targetCell) {
+  cloneStyle(sourceCell, targetCell);
+  // A merge slave only mirrors its master; copying its value would duplicate the master text.
+  targetCell.value = isMergeSlaveCell(sourceCell) ? null : cloneCellValue(sourceCell.value);
+}
+
+function cloneStyleObject(style) {
+  return JSON.parse(JSON.stringify(style || {}));
+}
+
+// Right edge of the row's content. Merge slaves report their master's value, so a merged band counts up to its
+// own right edge, while formatted-but-empty cells (a common artifact of editing a template in Excel) do not.
+function lastValueColumn(row) {
+  let last = 0;
+  row.eachCell({ includeEmpty: true }, (cell, col) => {
+    const value = cell.value;
+    if (value != null && value !== "") last = col;
+  });
+  return last;
+}
+
+// Inserts Revenue US / Tax US / Revenue BR / Tax BR right after the "total_usd" columns of the items table and
+// shifts the remaining table columns (share rate, payout, note) to the right. The table block is the group header,
+// header, formula hint and item template rows plus the spacer and sum rows right under the template, so the
+// border grid stays continuous.
+function insertRevenueTaxExportColumns(ws, templateRow) {
+  const template = ws.getRow(templateRow);
+  let totalStartCol = null;
+  let totalEndCol = null;
+
+  template.eachCell({ includeEmpty: true }, (cell, col) => {
+    if (typeof cell.value === "string" && cell.value.includes("${table.items.total_usd}")) {
+      if (totalStartCol == null) totalStartCol = col;
+      totalEndCol = col;
+    }
+  });
+
+  if (totalStartCol == null || totalEndCol == null) return null;
+
+  const insertAt = totalEndCol + 1;
+  const insertedColumnCount = REVENUE_TAX_EXPORT_COLUMNS.length;
+  const headerGroupRow = templateRow - 3;
+  const headerRow = templateRow - 2;
+  const formulaRow = templateRow - 1;
+  const spacerRow = templateRow + 1;
+  const sumRow = templateRow + 2;
+  const tableRows = [headerGroupRow, headerRow, formulaRow, templateRow, spacerRow, sumRow].filter((rowNumber) => rowNumber >= 1);
+  const originalLastCol = Math.max(totalEndCol, ...tableRows.map((rowNumber) => lastValueColumn(ws.getRow(rowNumber))));
+  const shiftedLastCol = originalLastCol + insertedColumnCount;
+  const groupHeaderValue = headerGroupRow >= 1 ? cloneCellValue(ws.getCell(headerGroupRow, totalStartCol).value) : null;
+
+  // Border pattern of the first column being pushed right (the old "share rate" column), captured before the shift.
+  const insertBorders = new Map();
+  for (const rowNumber of tableRows) {
+    insertBorders.set(rowNumber, cloneStyleObject(ws.getCell(rowNumber, insertAt).style).border);
+  }
+
+  for (let col = originalLastCol; col >= insertAt; col -= 1) {
+    const width = ws.getColumn(col).width;
+    if (width) ws.getColumn(col + insertedColumnCount).width = width;
+  }
+
+  for (const rowNumber of tableRows) {
+    clearOverlappingRowMerges(ws, rowNumber, insertAt, shiftedLastCol);
+
+    for (let col = originalLastCol; col >= insertAt; col -= 1) {
+      const sourceCell = ws.getCell(rowNumber, col);
+      const targetCell = ws.getCell(rowNumber, col + insertedColumnCount);
+      copyCell(sourceCell, targetCell);
+      if (!isMergeSlaveCell(sourceCell)) sourceCell.value = null;
+      sourceCell.style = {};
+    }
+  }
+
+  REVENUE_TAX_EXPORT_COLUMNS.forEach((column, index) => {
+    const col = insertAt + index;
+    ws.getColumn(col).width = 14;
+
+    for (const rowNumber of tableRows) {
+      // Look of the "total_usd" band (numeric format, fill, font) with the full border grid of a regular column.
+      const style = cloneStyleObject(ws.getCell(rowNumber, totalStartCol).style);
+      const border = insertBorders.get(rowNumber);
+      if (border) style.border = cloneStyleObject(border);
+      const cell = ws.getCell(rowNumber, col);
+      cell.style = style;
+
+      if (rowNumber === headerRow) {
+        cell.value = column.header;
+      } else if (rowNumber === templateRow) {
+        cell.value = column.placeholder;
+        cell.numFmt = "#,##0.00";
+      } else {
+        cell.value = null;
+      }
+    }
+  });
+
+  if (headerGroupRow >= 1) {
+    clearOverlappingRowMerges(ws, headerGroupRow, totalStartCol, shiftedLastCol);
+    // Keep each cell's own style so the right border of the (shifted) last cell survives the merge.
+    ws.mergeCellsWithoutStyle(headerGroupRow, totalStartCol, headerGroupRow, shiftedLastCol);
+    const mergedHeader = ws.getCell(headerGroupRow, totalStartCol);
+    if (mergedHeader.value == null && groupHeaderValue != null) mergedHeader.value = groupHeaderValue;
+  }
+
+  return {
+    valueStartCol: totalStartCol,
+    originalLastCol,
+    rightCol: shiftedLastCol,
+    insertAt,
+    insertedColumnCount
+  };
+}
+
+// Extends one single-row merge [left..oldRight] to [left..newRight], keeping the master value and moving the
+// old last cell's look (the right border) to the new last cell.
+function extendRowMerge(ws, rowNumber, left, oldRight, newRight) {
+  if (newRight <= oldRight) return;
+  const masterCell = ws.getCell(rowNumber, left);
+  if (isMergeSlaveCell(masterCell)) return;
+  const value = cloneCellValue(masterCell.value);
+  const innerStyle = cloneStyleObject(masterCell.style);
+  const edgeStyle = cloneStyleObject(ws.getCell(rowNumber, oldRight).style || masterCell.style);
+
+  clearOverlappingRowMerges(ws, rowNumber, left, newRight);
+
+  for (let col = left + 1; col <= newRight; col += 1) {
+    const cell = ws.getCell(rowNumber, col);
+    if (!isMergeSlaveCell(cell)) cell.value = null;
+    cell.style = cloneStyleObject(col === newRight ? edgeStyle : innerStyle);
+  }
+
+  masterCell.value = value;
+  ws.mergeCellsWithoutStyle(rowNumber, left, rowNumber, newRight);
+}
+
+// Rows outside the items table that were merged up to the table's old right edge (summary rows under the table,
+// the title block, amount in words, signature block) are widened to the new edge. A standalone cell right after
+// such a band (the exchange-rate value) is pushed to the new edge so it stays at the table's right side.
+function widenRowsOutsideTable(ws, tableTop, tableBottom, state) {
+  if (!state) return;
+  const { originalLastCol, rightCol, insertedColumnCount } = state;
+  const raw = getMerges(ws);
+  const merges = Object.keys(raw)
+    .map((key) => raw[key]?.model || raw[key])
+    .filter((merge) => merge && merge.top === merge.bottom && (merge.top < tableTop || merge.top > tableBottom))
+    .map((merge) => ({ top: merge.top, left: merge.left, right: merge.right }))
+    .sort((a, b) => a.top - b.top || a.left - b.left);
+
+  for (const merge of merges) {
+    const rowNumber = merge.top;
+    if (merge.right === originalLastCol) {
+      extendRowMerge(ws, rowNumber, merge.left, originalLastCol, rightCol);
+    } else if (merge.right === originalLastCol - 1) {
+      const tail = ws.getCell(rowNumber, originalLastCol);
+      if (isMergeSlaveCell(tail)) continue;
+      copyCell(tail, ws.getCell(rowNumber, originalLastCol + insertedColumnCount));
+      tail.value = null;
+      extendRowMerge(ws, rowNumber, merge.left, originalLastCol - 1, rightCol - 1);
+    }
+  }
+}
+
 function replacePlaceholders(ws, payload, item) {
   ws.eachRow({ includeEmpty: true }, (row) => {
     row.eachCell({ includeEmpty: true }, (cell) => {
@@ -594,6 +780,10 @@ function makePayload(detail, company, options = {}) {
         yt_channels_id: safeStr(channel.channel_id),
         network: safeStr(channel.network_name || "-"),
         total_usd: round2(channel.revenue_usd),
+        revenue_us: round2(channel.revenue_us),
+        tax_us: round2(channel.tax_us),
+        revenue_br: round2(channel.revenue_br),
+        tax_br: round2(channel.tax_br),
         share_rate: `${round2(channel.applied_share)}%`,
         payout_value: currency === "USD" ? round2(channel.share_amount) : toNumber(channel.paid ?? channel.share_amount_converted),
         payout_usd: round2(channel.share_amount),
@@ -641,6 +831,8 @@ async function generateGroupReconciliationExcel(detail, company, options = {}) {
     ws.name = safeStr(detail.partner_name || detail.group_name || "Reconciliation").slice(0, 31) || "Reconciliation";
     if (language === "en") applyEnglishStaticText(ws);
     const templateRow = findItemsTemplateRow(ws);
+    const includeRevenueTaxColumns = Boolean(options.export_us_br || options.exportUsBr);
+    let taxColumnState = null;
     const items = payload.table.items.length > 0
       ? payload.table.items
       : [{
@@ -649,12 +841,23 @@ async function generateGroupReconciliationExcel(detail, company, options = {}) {
           yt_channels_id: "",
           network: "",
           total_usd: 0,
+          revenue_us: 0,
+          tax_us: 0,
+          revenue_br: 0,
+          tax_br: 0,
           share_rate: "",
           payout_value: 0,
           note: ""
         }];
 
     if (templateRow) {
+      if (includeRevenueTaxColumns) taxColumnState = insertRevenueTaxExportColumns(ws, templateRow);
+      if (taxColumnState) {
+        // The wider table no longer fits the template's fixed 70% landscape scale; fit it to one page width.
+        ws.pageSetup.fitToPage = true;
+        ws.pageSetup.fitToWidth = 1;
+        ws.pageSetup.fitToHeight = 0;
+      }
       const snapshot = snapshotRow(ws, templateRow);
 
       if (items.length > 1) {
@@ -678,6 +881,10 @@ async function generateGroupReconciliationExcel(detail, company, options = {}) {
     }
 
     replacePlaceholders(ws, payload);
+    if (templateRow && taxColumnState) {
+      // Table block = group header row .. sum row under the last item (spacer + sum are the two rows below the items).
+      widenRowsOutsideTable(ws, templateRow - 3, templateRow + items.length + 1, taxColumnState);
+    }
     normalizePhonePrefixInWorksheet(ws);
     if (language === "en") applyEnglishHeader(ws, detail.month || "");
   }

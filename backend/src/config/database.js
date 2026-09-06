@@ -206,6 +206,8 @@ db.exec(`
     network_id INTEGER,
     channel_id TEXT NOT NULL,
     revenue REAL NOT NULL DEFAULT 0,
+    revenue_us REAL NOT NULL DEFAULT 0,
+    revenue_br REAL NOT NULL DEFAULT 0,
     source_file TEXT,
     import_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -259,6 +261,7 @@ db.exec(`
     group_name TEXT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'USD',
     fee_rate REAL NOT NULL DEFAULT 0,
+    apply_revenue_tax INTEGER NOT NULL DEFAULT 0,
     description TEXT,
     tiers TEXT NOT NULL DEFAULT '[]',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -730,6 +733,10 @@ const hasGroupFeeRate = groupColumns.some((column) => column.name === "fee_rate"
 if (!hasGroupFeeRate) {
   db.exec("ALTER TABLE channel_groups ADD COLUMN fee_rate REAL NOT NULL DEFAULT 0");
 }
+const hasGroupRevenueTax = groupColumns.some((column) => column.name === "apply_revenue_tax");
+if (!hasGroupRevenueTax) {
+  db.exec("ALTER TABLE channel_groups ADD COLUMN apply_revenue_tax INTEGER NOT NULL DEFAULT 0");
+}
 
 const groupChannelColumns = db.prepare("PRAGMA table_info(group_channels)").all();
 const hasCustomShareOverride = groupChannelColumns.some((column) => column.name === "custom_share_override");
@@ -758,6 +765,17 @@ if (!hasRevenueImport) {
   db.exec("ALTER TABLE channel_revenues ADD COLUMN import_id INTEGER");
 }
 
+const hasRevenueUs = revenueColumns.some((column) => column.name === "revenue_us");
+const hasRevenueBr = revenueColumns.some((column) => column.name === "revenue_br");
+
+if (!hasRevenueUs) {
+  db.exec("ALTER TABLE channel_revenues ADD COLUMN revenue_us REAL NOT NULL DEFAULT 0");
+}
+
+if (!hasRevenueBr) {
+  db.exec("ALTER TABLE channel_revenues ADD COLUMN revenue_br REAL NOT NULL DEFAULT 0");
+}
+
 const revenueIndexes = db.prepare("PRAGMA index_list(channel_revenues)").all();
 const hasOldMonthChannelUnique = revenueIndexes.some((index) => {
   if (!index.unique || index.name === "idx_channel_revenues_month_network_channel") return false;
@@ -775,6 +793,8 @@ if (hasOldMonthChannelUnique) {
       network_id INTEGER,
       channel_id TEXT NOT NULL,
       revenue REAL NOT NULL DEFAULT 0,
+      revenue_us REAL NOT NULL DEFAULT 0,
+      revenue_br REAL NOT NULL DEFAULT 0,
       source_file TEXT,
       import_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -782,9 +802,9 @@ if (hasOldMonthChannelUnique) {
     );
 
     INSERT INTO channel_revenues (
-      id, month, network_id, channel_id, revenue, source_file, import_id, created_at, updated_at
+      id, month, network_id, channel_id, revenue, revenue_us, revenue_br, source_file, import_id, created_at, updated_at
     )
-    SELECT id, month, network_id, channel_id, revenue, source_file, import_id, created_at, updated_at
+    SELECT id, month, network_id, channel_id, revenue, revenue_us, revenue_br, source_file, import_id, created_at, updated_at
     FROM channel_revenues_old;
 
     DROP TABLE channel_revenues_old;
@@ -811,6 +831,7 @@ if (!groupHasCollaborator || groupPartnerColumn?.notnull) {
       group_name TEXT NOT NULL,
       currency TEXT NOT NULL DEFAULT 'USD',
       fee_rate REAL NOT NULL DEFAULT 0,
+      apply_revenue_tax INTEGER NOT NULL DEFAULT 0,
       description TEXT,
       tiers TEXT NOT NULL DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -820,9 +841,9 @@ if (!groupHasCollaborator || groupPartnerColumn?.notnull) {
     );
 
     INSERT INTO channel_groups_migration (
-      id, partner_id, collaborator_id, group_name, currency, fee_rate, description, tiers, created_at, updated_at
+      id, partner_id, collaborator_id, group_name, currency, fee_rate, apply_revenue_tax, description, tiers, created_at, updated_at
     )
-    SELECT id, partner_id, ${groupHasCollaborator ? "collaborator_id" : "NULL"}, group_name, currency, fee_rate, description, tiers, created_at, updated_at
+    SELECT id, partner_id, ${groupHasCollaborator ? "collaborator_id" : "NULL"}, group_name, currency, fee_rate, apply_revenue_tax, description, tiers, created_at, updated_at
     FROM channel_groups;
 
     DROP TABLE channel_groups;
