@@ -1,4 +1,3 @@
-const axios = require("axios");
 const db = require("../config/database");
 const { refreshAccessToken } = require("./googleCmsAuthService");
 
@@ -52,9 +51,14 @@ async function getAccessToken(network) {
     return network.cms_access_token;
   }
 
+  // Callers (claim manager, delivery) recognise a refused CMS credential by `cmsAuthFailed` and
+  // `networkId`, whatever message or HTTP status the failure carries.
   if (!network.cms_refresh_token) {
     const error = new Error("CMS refresh token is missing. Please re-auth CMS.");
     error.status = 400;
+    error.cmsAuthFailed = true;
+    error.networkId = network.id;
+    error.reason = "missing_refresh_token";
     throw error;
   }
 
@@ -73,7 +77,44 @@ async function getAccessToken(network) {
 
     return refreshed.access_token;
   } catch (error) {
-    const message = getGoogleError(error);
+    const status = Number(error?.response?.status || 0);
+    const data = error?.response?.data;
+    // The token endpoint speaks OAuth: { error: "invalid_grant", error_description: "…" }.
+    const oauthCode = typeof data?.error === "string" ? data.error : "";
+    const message = oauthCode && data?.error_description ? `${oauthCode}: ${data.error_description}` : getGoogleError(error);
+    const quoted = message.replace(/[.\s]+$/, ""); // embedded in parentheses below
+    // Google's token endpoint refuses a credential with 400 (invalid_grant, …) or 401
+    // (invalid_client). Anything else says nothing about the credential: a timeout, a dropped
+    // socket, a DNS failure or a 5xx must not flag the CMS as needing re-authorization, or a blip
+    // at Google would cost a manual OAuth round trip.
+    if (status !== 400 && status !== 401) {
+      if (!error?.response && !error?.request && !error?.code) throw error; // not a transport error: a bug or missing OAuth config
+      const transient = new Error(error?.response
+        ? `Google's token service answered ${status} while refreshing the CMS access token (${quoted}); try again.`
+        : `Google's token service could not be reached to refresh the CMS access token (${quoted}); try again.`);
+      transient.tokenRefreshTransient = true;
+      transient.networkId = network.id;
+      transient.code = error?.code;
+      transient.googleMessage = transient.message;
+      if (status >= 500 || status === 429) transient.status = status;
+      if (!error?.response && (["ECONNABORTED", "ETIMEDOUT"].includes(error?.code) || /timeout of \d+ms exceeded/i.test(String(error?.message || "")))) {
+        transient.timedOut = true;
+      }
+      const retryAfter = Number(error?.response?.headers?.["retry-after"]);
+      if (Number.isFinite(retryAfter) && retryAfter >= 0) transient.retryAfter = retryAfter;
+      throw transient;
+    }
+    // Every OAuth refusal except invalid_grant is about this application's OAuth client (wrong or
+    // rotated GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, client deleted): re-authorizing the CMS goes
+    // through the same client and fails the same way, so the network is not flagged.
+    if (oauthCode && oauthCode !== "invalid_grant") {
+      const misconfigured = new Error(`Google rejected this application's OAuth client while refreshing the CMS token (${quoted}). An administrator must check GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET on the server; re-authorizing the CMS will not help.`);
+      misconfigured.oauthClientMisconfigured = true;
+      misconfigured.networkId = network.id;
+      misconfigured.reason = oauthCode;
+      misconfigured.googleMessage = misconfigured.message;
+      throw misconfigured;
+    }
     db.prepare(`
       UPDATE networks
       SET cms_auth_status = 'error',
@@ -81,469 +122,18 @@ async function getAccessToken(network) {
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(message, network.id);
-    throw new Error(message);
+    const failure = new Error(message);
+    failure.cmsAuthFailed = true;
+    failure.networkId = network.id;
+    failure.reason = oauthCode || "invalid_grant";
+    failure.googleMessage = message;
+    throw failure;
   }
-}
-
-async function createClaim(networkId, payload) {
-  const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
-  const contentOwnerId = String(network.network_code || "").trim();
-
-  const body = {
-    assetId: String(payload.asset_id || "").trim(),
-    videoId: String(payload.video_id || "").trim(),
-    contentType: String(payload.content_type || "audiovisual").trim() || "audiovisual",
-    policy: {
-      id: String(payload.policy_id || "").trim()
-    }
-  };
-
-  const response = await axios.post(`${YOUTUBE_PARTNER_API}/claims`, body, {
-    params: { onBehalfOfContentOwner: contentOwnerId },
-    headers: { Authorization: `Bearer ${accessToken}` },
-    timeout: 30000
-  });
-
-  return {
-    network,
-    contentOwnerId,
-    data: response.data
-  };
-}
-
-async function getClaim(networkId, claimId) {
-  const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
-  const contentOwnerId = String(network.network_code || "").trim();
-
-  const response = await axios.get(`${YOUTUBE_PARTNER_API}/claims/${encodeURIComponent(claimId)}`, {
-    params: { onBehalfOfContentOwner: contentOwnerId },
-    headers: { Authorization: `Bearer ${accessToken}` },
-    timeout: 30000
-  });
-
-  return {
-    network,
-    contentOwnerId,
-    data: response.data
-  };
-}
-
-function getNestedValue(object, paths) {
-  for (const path of paths) {
-    const value = path.split(".").reduce((current, key) => current?.[key], object);
-    if (value !== undefined && value !== null && value !== "") return value;
-  }
-  return "";
-}
-
-function firstArrayValue(value) {
-  if (Array.isArray(value)) return value.find((item) => item !== undefined && item !== null && item !== "") || "";
-  return value || "";
-}
-
-function findDeepValue(object, keys) {
-  const wanted = new Set(keys.map((key) => String(key).toLowerCase()));
-  const queue = [object];
-  const seen = new Set();
-
-  while (queue.length) {
-    const current = queue.shift();
-    if (!current || typeof current !== "object" || seen.has(current)) continue;
-    seen.add(current);
-
-    if (Array.isArray(current)) {
-      for (const item of current) queue.push(item);
-      continue;
-    }
-
-    for (const [key, value] of Object.entries(current)) {
-      if (wanted.has(String(key).toLowerCase())) {
-        const normalized = firstArrayValue(value);
-        if (normalized !== undefined && normalized !== null && normalized !== "") return normalized;
-      }
-      if (value && typeof value === "object") queue.push(value);
-    }
-  }
-
-  return "";
-}
-
-function getOwnerFromAsset(asset, contentOwnerId) {
-  const ownership = asset.ownership || {};
-  const generalOwner = Array.isArray(ownership.general)
-    ? ownership.general.find((item) => item?.owner || item?.contentOwner || item?.contentOwnerId)
-    : null;
-  const territorialOwner = Array.isArray(ownership.territorialOwners)
-    ? ownership.territorialOwners.find((item) => item?.owner || item?.contentOwner || item?.contentOwnerId)
-    : null;
-
-  return getNestedValue({
-    ...asset,
-    generalOwner,
-    territorialOwner
-  }, [
-    "contentOwnerId",
-    "content_owner_id",
-    "owner",
-    "ownerId",
-    "ownership.owner",
-    "ownership.contentOwner",
-    "ownership.contentOwnerId",
-    "generalOwner.owner",
-    "generalOwner.contentOwner",
-    "generalOwner.contentOwnerId",
-    "territorialOwner.owner",
-    "territorialOwner.contentOwner",
-    "territorialOwner.contentOwnerId"
-  ]) || contentOwnerId;
-}
-
-function normalizeAsset(rawAsset, contentOwnerId) {
-  const metadata = rawAsset.metadata || rawAsset.metadataDetails || rawAsset.assetMetadata || rawAsset.snippet || {};
-  const soundRecording = metadata.soundRecordingMetadata
-    || metadata.soundRecording
-    || rawAsset.soundRecordingMetadata
-    || rawAsset.soundRecording
-    || {};
-  const album = metadata.albumMetadata || metadata.album || rawAsset.albumMetadata || rawAsset.album || {};
-  const ownership = rawAsset.ownership || {};
-  const assetOwnerId = getOwnerFromAsset(rawAsset, contentOwnerId);
-  const title = getNestedValue({ metadata, soundRecording, album, rawAsset }, [
-    "metadata.title",
-    "metadata.name",
-    "metadata.assetTitle",
-    "soundRecording.title",
-    "soundRecording.name",
-    "album.title",
-    "album.name",
-    "rawAsset.title",
-    "rawAsset.name"
-  ]) || findDeepValue(rawAsset, ["title", "assetTitle", "name"]);
-  const isrc = firstArrayValue(getNestedValue({ metadata, soundRecording, rawAsset }, [
-    "metadata.isrc",
-    "metadata.isrcs",
-    "metadata.isrcCode",
-    "soundRecording.isrc",
-    "soundRecording.isrcs",
-    "soundRecording.isrcCode",
-    "rawAsset.isrc",
-    "rawAsset.isrcs"
-  ])) || findDeepValue(rawAsset, ["isrc", "isrcs", "isrcCode"]);
-  const upc = firstArrayValue(getNestedValue({ metadata, soundRecording, album, rawAsset }, [
-    "metadata.upc",
-    "metadata.upcs",
-    "metadata.upcCode",
-    "metadata.albumUpc",
-    "soundRecording.upc",
-    "soundRecording.upcs",
-    "album.upc",
-    "album.upcs",
-    "rawAsset.upc",
-    "rawAsset.upcs"
-  ])) || findDeepValue(rawAsset, ["upc", "upcs", "upcCode", "albumUpc"]);
-
-  return {
-    asset_id: rawAsset.id || rawAsset.assetId || rawAsset.asset_id || "",
-    asset_owner_id: assetOwnerId,
-    asset_owner_name: getNestedValue(rawAsset, [
-      "ownerName",
-      "contentOwnerName",
-      "ownership.ownerName",
-      "ownership.contentOwnerName"
-    ]) || assetOwnerId,
-    asset_title: title,
-    isrc,
-    upc,
-    asset_label: getNestedValue({ metadata, soundRecording, album, rawAsset }, [
-      "metadata.assetLabel",
-      "metadata.customId",
-      "metadata.label",
-      "soundRecording.assetLabel",
-      "soundRecording.label",
-      "album.label",
-      "rawAsset.customId",
-      "rawAsset.assetLabel",
-      "rawAsset.label"
-    ]),
-    record_label: getNestedValue({ metadata, soundRecording, album, rawAsset }, [
-      "metadata.recordLabel",
-      "metadata.label",
-      "soundRecording.recordLabel",
-      "soundRecording.label",
-      "album.recordLabel",
-      "album.label",
-      "rawAsset.recordLabel"
-    ]),
-    ownership,
-    raw: rawAsset
-  };
-}
-
-function normalizeClaim(rawClaim, network, contentOwnerId) {
-  const policy = rawClaim.policy || rawClaim.policyDetails || rawClaim.matchPolicy || {};
-  const asset = rawClaim.asset || rawClaim.assetDetails || rawClaim.assetSnippet || {};
-  const matchInfo = rawClaim.matchInfo || rawClaim.match || rawClaim.details || {};
-  const claimId = rawClaim.id || rawClaim.claimId || rawClaim.claim_id || "";
-  const videoId = rawClaim.videoId || rawClaim.video_id || getNestedValue(rawClaim, ["video.id", "videoDetails.videoId"]);
-  const assetId = rawClaim.assetId || rawClaim.asset_id || asset.id || asset.assetId || "";
-  const cmsOwner = rawClaim.contentOwnerId || rawClaim.content_owner_id || rawClaim.owner || "";
-  const hasPolicy = Boolean(
-    policy.id ||
-    policy.policyId ||
-    policy.name ||
-    rawClaim.policyName ||
-    Object.keys(policy || {}).length
-  );
-  const managedBySelectedCms = hasPolicy;
-  const status = String(rawClaim.status || rawClaim.claimStatus || "").toLowerCase();
-
-  return {
-    id: claimId,
-    claim_id: claimId,
-    video_id: videoId,
-    asset_id: assetId,
-    asset_title: asset.title || asset.name || rawClaim.assetTitle || "",
-    asset_label: rawClaim.assetLabel || rawClaim.asset_label || asset.label || asset.customId || "",
-    isrc: rawClaim.isrc || asset.isrc || getNestedValue(rawClaim, ["assetMetadata.isrc", "metadata.isrc"]),
-    upc: rawClaim.upc || asset.upc || getNestedValue(rawClaim, ["assetMetadata.upc", "metadata.upc"]),
-    status,
-    type: rawClaim.contentType || rawClaim.content_type || rawClaim.type || "",
-    policy_id: policy.id || policy.policyId || "",
-    policy_name: policy.name || rawClaim.policyName || "",
-    match_policy: policy,
-    cms_owner_id: cmsOwner,
-    cms_owner_name: network.name,
-    network_id: network.id,
-    network_name: network.name,
-    content_owner_id: contentOwnerId,
-    has_policy: hasPolicy,
-    managed_by_selected_cms: managedBySelectedCms,
-    raw: rawClaim,
-    releasable: Boolean(claimId) && managedBySelectedCms && ["active", "pending"].includes(status)
-  };
-}
-
-async function getAsset(networkId, assetId) {
-  const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
-  const contentOwnerId = String(network.network_code || "").trim();
-
-  const response = await axios.get(`${YOUTUBE_PARTNER_API}/assets/${encodeURIComponent(assetId)}`, {
-    params: { onBehalfOfContentOwner: contentOwnerId },
-    headers: { Authorization: `Bearer ${accessToken}` },
-    timeout: 30000
-  });
-
-  return {
-    network,
-    contentOwnerId,
-    asset: normalizeAsset(response.data || {}, contentOwnerId)
-  };
-}
-
-async function getAssetsByIds(networkId, assetIds) {
-  const ids = Array.from(new Set((assetIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
-  const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
-  const contentOwnerId = String(network.network_code || "").trim();
-  const assets = new Map();
-  const errors = [];
-
-  async function fetchAssetDetail(assetId) {
-    const response = await axios.get(`${YOUTUBE_PARTNER_API}/assets/${encodeURIComponent(assetId)}`, {
-      params: {
-        onBehalfOfContentOwner: contentOwnerId,
-        fetchMetadata: true,
-        includeMetadata: true
-      },
-      headers: { Authorization: `Bearer ${accessToken}` },
-      timeout: 30000
-    });
-    return normalizeAsset(response.data || {}, contentOwnerId);
-  }
-
-  for (let index = 0; index < ids.length; index += 50) {
-    const chunk = ids.slice(index, index + 50);
-    try {
-      const response = await axios.get(`${YOUTUBE_PARTNER_API}/assets`, {
-        params: {
-          onBehalfOfContentOwner: contentOwnerId,
-          id: chunk.join(","),
-          maxResults: chunk.length,
-          fetchMetadata: true,
-          includeMetadata: true
-        },
-        headers: { Authorization: `Bearer ${accessToken}` },
-        timeout: 30000
-      });
-      const rows = response.data.items || response.data.assets || [];
-      rows.forEach((row) => {
-        const asset = normalizeAsset(row, contentOwnerId);
-        if (asset.asset_id) assets.set(asset.asset_id, asset);
-      });
-    } catch {
-      const results = await Promise.allSettled(chunk.map(async (assetId) => {
-        return fetchAssetDetail(assetId);
-      }));
-      results.forEach((result, resultIndex) => {
-        const assetId = chunk[resultIndex];
-        if (result.status === "fulfilled") {
-          assets.set(assetId, result.value);
-        } else {
-          errors.push({ asset_id: assetId, message: getGoogleError(result.reason) });
-        }
-      });
-    }
-  }
-
-  const missingMetadataIds = ids.filter((id) => {
-    const asset = assets.get(id);
-    return asset && (!asset.asset_title || !asset.isrc || !asset.upc);
-  });
-  if (missingMetadataIds.length) {
-    const results = await Promise.allSettled(missingMetadataIds.map((assetId) => fetchAssetDetail(assetId)));
-    results.forEach((result, resultIndex) => {
-      const assetId = missingMetadataIds[resultIndex];
-      if (result.status === "fulfilled") {
-        assets.set(assetId, { ...assets.get(assetId), ...result.value });
-      } else if (!errors.some((error) => error.asset_id === assetId)) {
-        errors.push({ asset_id: assetId, message: getGoogleError(result.reason) });
-      }
-    });
-  }
-
-  return { assets, errors };
-}
-
-async function enrichClaimsWithAssets(networkId, claims) {
-  const assetIds = claims.map((claim) => claim.asset_id).filter(Boolean);
-  const { assets, errors } = await getAssetsByIds(networkId, assetIds);
-
-  const enriched = claims.map((claim) => {
-    const asset = assets.get(String(claim.asset_id || "").trim());
-    const assetOwnerId = asset?.asset_owner_id || claim.cms_owner_id || claim.content_owner_id || "";
-
-    return {
-      ...claim,
-      asset_owner_id: assetOwnerId,
-      asset_owner_name: asset?.asset_owner_name || assetOwnerId || "-",
-      asset_title: asset?.asset_title || claim.asset_title || "",
-      isrc: asset?.isrc || claim.isrc || "",
-      upc: asset?.upc || claim.upc || "",
-      asset_label: asset?.asset_label || claim.asset_label || "",
-      record_label: asset?.record_label || claim.record_label || "",
-      asset_lookup_error: asset ? "" : (errors.find((error) => error.asset_id === claim.asset_id)?.message || ""),
-      releasable: Boolean(claim.claim_id)
-        && Boolean(claim.managed_by_selected_cms)
-        && ["active", "pending"].includes(String(claim.status || "").toLowerCase())
-    };
-  });
-
-  return { claims: enriched, assetErrors: errors };
-}
-
-async function listClaimsByVideo(networkId, videoId, options = {}) {
-  const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
-  const contentOwnerId = String(network.network_code || "").trim();
-  const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 500);
-  const claims = [];
-  let pageToken = "";
-
-  do {
-    const response = await axios.get(`${YOUTUBE_PARTNER_API}/claims`, {
-      params: {
-        onBehalfOfContentOwner: contentOwnerId,
-        videoId,
-        maxResults: Math.min(limit, 50),
-        pageToken: pageToken || undefined
-      },
-      headers: { Authorization: `Bearer ${accessToken}` },
-      timeout: 30000
-    });
-
-    const rows = response.data.items || response.data.claims || [];
-    rows.forEach((claim) => claims.push(normalizeClaim(claim, network, contentOwnerId)));
-    pageToken = response.data.nextPageToken || "";
-  } while (pageToken && claims.length < limit);
-
-  return { network, contentOwnerId, claims: claims.slice(0, limit) };
-}
-
-async function listClaimsByChannel(networkId, channelId, options = {}) {
-  const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
-  const contentOwnerId = String(network.network_code || "").trim();
-  const limit = Math.min(Math.max(Number(options.limit) || 200, 1), 1000);
-  const claims = [];
-  let pageToken = "";
-
-  do {
-    const response = await axios.get(`${YOUTUBE_PARTNER_API}/claims`, {
-      params: {
-        onBehalfOfContentOwner: contentOwnerId,
-        uploaderChannelId: channelId,
-        maxResults: Math.min(limit, 50),
-        pageToken: pageToken || undefined
-      },
-      headers: { Authorization: `Bearer ${accessToken}` },
-      timeout: 30000
-    });
-
-    const rows = response.data.items || response.data.claims || [];
-    rows.forEach((claim) => claims.push(normalizeClaim(claim, network, contentOwnerId)));
-    pageToken = response.data.nextPageToken || "";
-  } while (pageToken && claims.length < limit);
-
-  return { network, contentOwnerId, claims: claims.slice(0, limit) };
-}
-
-async function releaseClaim(networkId, claimId) {
-  const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
-  const contentOwnerId = String(network.network_code || "").trim();
-
-  const response = await axios.patch(
-    `${YOUTUBE_PARTNER_API}/claims/${encodeURIComponent(claimId)}`,
-    { status: "inactive" },
-    {
-      params: {
-        onBehalfOfContentOwner: contentOwnerId,
-        fields: "id,videoId,assetId,status,timeStatusLastModified",
-        prettyPrint: false
-      },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
-      },
-      timeout: 30000
-    }
-  );
-
-  if (!response.data?.id || String(response.data.status || "").toLowerCase() !== "inactive") {
-    throw new Error("Google did not confirm the claim as inactive.");
-  }
-
-  return {
-    network,
-    contentOwnerId,
-    data: response.data || {}
-  };
 }
 
 module.exports = {
-  createClaim,
-  getClaim,
-  enrichClaimsWithAssets,
   getAccessToken,
   getConnectedNetwork,
   getGoogleError,
-  getAsset,
-  getAssetsByIds,
-  listClaimsByChannel,
-  listClaimsByVideo,
-  releaseClaim,
   YOUTUBE_PARTNER_API
 };

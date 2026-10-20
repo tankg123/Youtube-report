@@ -1,6 +1,8 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useI18n } from "../context/I18nContext";
 
 export default function PaginationFooter({ total, page, pageSize, onPageChange, onPageSizeChange }) {
+  const { t } = useI18n();
   const pageCount = Math.max(1, Math.ceil(Number(total || 0) / Number(pageSize || 20)));
   const safePage = Math.min(Math.max(1, Number(page || 1)), pageCount);
   const start = total ? (safePage - 1) * pageSize + 1 : 0;
@@ -9,7 +11,7 @@ export default function PaginationFooter({ total, page, pageSize, onPageChange, 
   return (
     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-5 py-4 border-t border-slate-100 bg-white">
       <div className="flex items-center gap-3 text-sm text-slate-500">
-        <span>Show</span>
+        <span>{t("Show")}</span>
         <select
           value={pageSize}
           onChange={(event) => {
@@ -22,7 +24,7 @@ export default function PaginationFooter({ total, page, pageSize, onPageChange, 
             <option key={value} value={value}>{value}</option>
           ))}
         </select>
-        <span>items</span>
+        <span>{t("items")}</span>
         <span className="text-slate-300">-</span>
         <span>{start}-{end} / {total}</span>
       </div>
@@ -35,9 +37,9 @@ export default function PaginationFooter({ total, page, pageSize, onPageChange, 
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold disabled:opacity-50"
         >
           <ChevronLeft size={16} />
-          Previous
+          {t("Previous")}
         </button>
-        <span>Page</span>
+        <span>{t("Page")}</span>
         <input
           type="number"
           min="1"
@@ -53,7 +55,7 @@ export default function PaginationFooter({ total, page, pageSize, onPageChange, 
           onClick={() => onPageChange(safePage + 1)}
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold disabled:opacity-50"
         >
-          Next
+          {t("Next")}
           <ChevronRight size={16} />
         </button>
       </div>

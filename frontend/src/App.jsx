@@ -7,7 +7,7 @@ import {
   useLocation,
   Navigate
 } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Database, Disc3, FileAudio, FileSignature, FileSpreadsheet, Landmark, Network, PackageSearch, Percent, ReceiptText, Settings, Tags, Users, UsersRound, Video, WalletCards, UserRound, Loader2, FileVideo, Mail, ShieldCheck, Sparkles, LogOut } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Clapperboard, CloudUpload, Database, Disc3, FileAudio, FileSignature, FileSpreadsheet, Landmark, Network, PackageSearch, Percent, ReceiptText, Settings, Tags, Users, UsersRound, Video, WalletCards, UserRound, Loader2, FileVideo, Mail, ShieldCheck, Sparkles, LogOut } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -36,6 +36,8 @@ import ExchangeRatePage from "./pages/ExchangeRatePage";
 import CompanyPage from "./pages/CompanyPage";
 import SettingsPage from "./pages/SettingsPage";
 import ContentIdCreatorPage from "./pages/ContentIdCreatorPage";
+import ContentIdDeliveryPage from "./pages/ContentIdDeliveryPage";
+import ContentIdVideoDeliveryPage from "./pages/ContentIdVideoDeliveryPage";
 import ContentIdProductsPage from "./pages/ContentIdProductsPage";
 import ContentIdSettingsPage from "./pages/ContentIdSettingsPage";
 import ContentIdCatalogPage from "./pages/ContentIdCatalogPage";
@@ -55,6 +57,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 function LockedPage() {
   const { user, logout } = useAuth();
   const { settings } = useSystemSettings();
+  const { t } = useI18n();
   const brandName = settings?.brand_name || "ANS Network";
 
   function handleLogout() {
@@ -76,30 +79,30 @@ function LockedPage() {
           <div className="relative mt-8">
             <p className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700">
               <ShieldCheck size={18} />
-              Account created successfully
+              {t("Account created successfully")}
             </p>
 
             <h1 className="mt-5 text-4xl font-black leading-tight text-slate-950 lg:text-5xl">
-              Welcome to {brandName}
+              {t("Welcome to {brand}", { brand: brandName })}
             </h1>
 
             <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-600 lg:text-lg">
-              Your account is ready, but it does not have an active role yet. Please contact the administrator to assign permissions before using the system.
+              {t("Your account is ready, but it does not have an active role yet. Please contact the administrator to assign permissions before using the system.")}
             </p>
 
             <div className="mx-auto mt-8 grid max-w-2xl gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-left md:grid-cols-2">
               <div className="rounded-2xl bg-white p-4">
-                <p className="text-xs font-black uppercase tracking-wider text-slate-400">Account</p>
-                <p className="mt-1 font-black text-slate-900">{user?.full_name || "New user"}</p>
+                <p className="text-xs font-black uppercase tracking-wider text-slate-400">{t("Account")}</p>
+                <p className="mt-1 font-black text-slate-900">{user?.full_name || t("New user")}</p>
                 <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
                   <Mail size={15} />
                   {user?.email || "-"}
                 </p>
               </div>
               <div className="rounded-2xl bg-white p-4">
-                <p className="text-xs font-black uppercase tracking-wider text-slate-400">Next step</p>
-                <p className="mt-1 font-black text-slate-900">Contact administrator</p>
-                <p className="mt-1 text-sm text-slate-500">Ask an admin to add the correct role in Account Management.</p>
+                <p className="text-xs font-black uppercase tracking-wider text-slate-400">{t("Next step")}</p>
+                <p className="mt-1 font-black text-slate-900">{t("Contact administrator")}</p>
+                <p className="mt-1 text-sm text-slate-500">{t("Ask an admin to add the correct role in Account Management.")}</p>
               </div>
             </div>
 
@@ -109,7 +112,7 @@ function LockedPage() {
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 font-black text-white shadow-lg shadow-blue-900/20 hover:bg-blue-700"
               >
                 <Mail size={18} />
-                Contact admin
+                {t("Contact admin")}
               </a>
               <button
                 type="button"
@@ -117,7 +120,7 @@ function LockedPage() {
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 font-black text-slate-700 hover:bg-slate-50"
               >
                 <LogOut size={18} />
-                Sign out
+                {t("Sign out")}
               </button>
             </div>
           </div>
@@ -133,7 +136,7 @@ function MobileNav() {
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/exchange-rates", "/companies", "/groups"];
-  const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/whitelists", "/content-id/labels", "/content-id/artists"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/delivery", "/content-id/video-delivery", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/whitelists", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
   const emailPaths = ["/email/notification"];
@@ -146,20 +149,20 @@ function MobileNav() {
   const [emailOpen, setEmailOpen] = useState(emailPaths.includes(location.pathname));
 
   const channelMenus = [
-    { name: "Overview", path: "/channel-management", icon: Video },
-    { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
-    { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
+    { name: t("Overview"), path: "/channel-management", icon: Video },
+    { name: t("Collaborators"), path: "/channel-management/collaborators", icon: Users },
+    { name: t("Sharing"), path: "/channel-management/sharing", icon: Percent }
   ].filter(() => canViewChannelManagement);
 
   const reportMenus = [
     {
-      name: "Partner Dashboard",
+      name: t("Partner Dashboard"),
       path: "/partner-dashboard",
       icon: BarChart3,
       show: canViewPartnerDashboard
     },
     {
-      name: "Dashboard",
+      name: t("Dashboard"),
       path: "/report-dashboard",
       icon: BarChart3,
       show: canViewReports
@@ -171,13 +174,13 @@ function MobileNav() {
       show: canViewReports
     },
     {
-      name: "Export Multi",
+      name: t("Export Multi"),
       path: "/export-multi",
       icon: FileSpreadsheet,
       show: canViewReports
     },
     {
-      name: "Channel",
+      name: t("Channel"),
       path: "/channels",
       icon: Video,
       show: canViewReports
@@ -203,19 +206,21 @@ function MobileNav() {
   ].filter((item) => item.show);
 
   const contentIdMenus = [
-    { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
-    { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
-    { name: "Product Manager", path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
-    { name: "Claim Manager", path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
-    { name: "Whitelist", path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
-    { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
-    { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
+    { name: t("Creator CSV"), path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
+    { name: t("CMS Delivery"), path: "/content-id/delivery", icon: CloudUpload, show: canViewContentIdFull },
+    { name: t("Video Delivery"), path: "/content-id/video-delivery", icon: Clapperboard, show: canViewContentIdFull },
+    { name: t("Web Asset Reference"), path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
+    { name: t("Product Manager"), path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
+    { name: t("Claim Manager"), path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+    { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
+    { name: t("Label"), path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
+    { name: t("Artist"), path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
   ].filter((item) => item.show);
   const mobileContentIdMenus =
     canViewContentIdFull && !contentIdMenus.some((item) => item.path === "/content-id/whitelists")
       ? [
           ...contentIdMenus.slice(0, 4),
-          { name: "Whitelist", path: "/content-id/whitelists", icon: ShieldCheck },
+          { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck },
           ...contentIdMenus.slice(4)
         ]
       : contentIdMenus;
@@ -241,7 +246,7 @@ function MobileNav() {
       icon: Network
     },
     {
-      name: "Content ID Setting",
+      name: t("Content ID Setting"),
       path: "/settings/content-id",
       icon: Disc3
     }
@@ -275,7 +280,7 @@ function MobileNav() {
               ].join(" ")}
             >
               <Video size={17} />
-              Channel Management
+              {t("Channel Management")}
               <ChevronDown size={16} className={channelOpen ? "rotate-180 transition" : "transition"} />
             </button>
             {channelOpen && (
@@ -349,7 +354,7 @@ function MobileNav() {
               ].join(" ")}
             >
               <Disc3 size={17} />
-              Content ID
+              {t("Content ID")}
               <ChevronDown size={16} className={contentIdOpen ? "rotate-180 transition" : "transition"} />
             </button>
             {contentIdOpen && (
@@ -386,7 +391,7 @@ function MobileNav() {
               ].join(" ")}
             >
               <WalletCards size={17} />
-              Expense
+              {t("expense")}
               <ChevronDown size={16} className={expenseOpen ? "rotate-180 transition" : "transition"} />
             </button>
             {expenseOpen && (
@@ -423,15 +428,15 @@ function MobileNav() {
               ].join(" ")}
             >
               <Building2 size={17} />
-              Partner & Contract
+              {t("Partner & Contract")}
               <ChevronDown size={16} className={partnerOpen ? "rotate-180 transition" : "transition"} />
             </button>
             {partnerOpen && (
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {[
-                  { name: "Overview", path: "/partners/overview", icon: BarChart3 },
-                  { name: "Partner", path: "/partners/list", icon: Building2 },
-                  { name: "Contract", path: "/partners/contracts", icon: FileSignature }
+                  { name: t("Overview"), path: "/partners/overview", icon: BarChart3 },
+                  { name: t("Partner"), path: "/partners/list", icon: Building2 },
+                  { name: t("Contract"), path: "/partners/contracts", icon: FileSignature }
                 ].map((item) => {
                   const Icon = item.icon;
                   const active = location.pathname === item.path || (location.pathname === "/partners" && item.path === "/partners/overview");
@@ -456,13 +461,13 @@ function MobileNav() {
               ].join(" ")}
             >
               <Mail size={17} />
-              Email
+              {t("Email")}
               <ChevronDown size={16} className={emailOpen ? "rotate-180 transition" : "transition"} />
             </button>
             {emailOpen && (
               <div className="grid grid-cols-1 gap-2 mt-2">
                 {[
-                  { name: "Email Notification", path: "/email/notification", icon: Mail }
+                  { name: t("Email Notification"), path: "/email/notification", icon: Mail }
                 ].map((item) => {
                   const Icon = item.icon;
                   const active = location.pathname === item.path;
@@ -731,6 +736,14 @@ function PrivateLayout() {
           <Route
             path="/content-id/creator"
             element={canViewContentIdFull ? <ContentIdCreatorPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
+            path="/content-id/delivery"
+            element={canViewContentIdFull ? <ContentIdDeliveryPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
+            path="/content-id/video-delivery"
+            element={canViewContentIdFull ? <ContentIdVideoDeliveryPage /> : <Navigate to={defaultPath} replace />}
           />
           <Route
             path="/content-id/web-assets"

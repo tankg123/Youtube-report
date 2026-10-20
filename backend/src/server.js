@@ -18,6 +18,8 @@ const expenseRoutes = require("./routes/expenseRoutes");
 const emailRoutes = require("./routes/emailRoutes");
 const publicRoutes = require("./routes/publicRoutes");
 const { processDueEmailSchedules } = require("./controllers/emailController");
+const { scheduleDraftAudioSweep } = require("./services/deliveryDraftService");
+const { reconcileInterruptedJobs } = require("./services/deliveryJobService");
 const apiKeyMiddleware = require("./middlewares/apiKeyMiddleware");
 
 const app = express();
@@ -34,7 +36,7 @@ app.use(
 app.use(
   cors({
     origin: [FRONTEND_URL, "http://localhost:5173", "http://192.168.1.179:5173"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
     exposedHeaders: ["Content-Disposition", "X-Package-Skipped"]
   })
@@ -99,7 +101,23 @@ function scheduleEmailNotifications() {
   setInterval(runEmailScheduleTick, 60 * 1000);
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   scheduleEmailNotifications();
+  // CMS Delivery: a process restart interrupts any running delivery job; record it and make the
+  // affected tracks retryable, then keep expiring audio uploaded from the form but never used.
+  try {
+    const interrupted = reconcileInterruptedJobs();
+    if (interrupted) console.log(`[cms-delivery] ${interrupted} interrupted delivery job(s) recorded after restart`);
+  } catch (error) {
+    console.error("[cms-delivery] could not reconcile interrupted deliveries:", error.message);
+  }
+  scheduleDraftAudioSweep();
 });
+
+// CMS Delivery streams raw audio uploads (up to 2 GB) straight into the request; Node's default
+// 5-minute whole-request timeout would cut slow uploads off with a 408. Headers keep their 60 s
+// limit and idle sockets are still dropped, so stalled connections do not pile up.
+const UPLOAD_REQUEST_TIMEOUT_MS = Number(process.env.HTTP_REQUEST_TIMEOUT_MS);
+server.requestTimeout = Number.isFinite(UPLOAD_REQUEST_TIMEOUT_MS) && UPLOAD_REQUEST_TIMEOUT_MS >= 0 ? UPLOAD_REQUEST_TIMEOUT_MS : 0;
+server.setTimeout(Number(process.env.HTTP_SOCKET_IDLE_TIMEOUT_MS) > 0 ? Number(process.env.HTTP_SOCKET_IDLE_TIMEOUT_MS) : 30 * 60 * 1000);

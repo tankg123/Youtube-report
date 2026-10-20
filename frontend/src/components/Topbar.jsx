@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
+import { tk } from "../i18n/index.js";
 
 const avatarColors = ["#2563eb", "#059669", "#7c3aed", "#dc2626", "#d97706", "#0891b2", "#be185d"];
 
@@ -14,11 +15,11 @@ function randomColor() {
 }
 
 function strongPasswordError(password) {
-  if (String(password || "").length < 8) return "Password must be at least 8 characters";
-  if (!/[A-Z]/.test(password)) return "Password must include an uppercase letter";
-  if (!/[a-z]/.test(password)) return "Password must include a lowercase letter";
-  if (!/\d/.test(password)) return "Password must include a number";
-  if (!/[^A-Za-z0-9]/.test(password)) return "Password must include a special character";
+  if (String(password || "").length < 8) return tk("Password must be at least 8 characters");
+  if (!/[A-Z]/.test(password)) return tk("Password must include an uppercase letter");
+  if (!/[a-z]/.test(password)) return tk("Password must include a lowercase letter");
+  if (!/\d/.test(password)) return tk("Password must include a number");
+  if (!/[^A-Za-z0-9]/.test(password)) return tk("Password must include a special character");
   return "";
 }
 
@@ -45,7 +46,7 @@ function PasswordInput({ label, value, onChange, shown, onToggle }) {
 export default function Topbar() {
   const location = useLocation();
   const { user, logout, updateSavedUser, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
-  const { language, setLanguage, t } = useI18n();
+  const { language, setLanguage, t, tm } = useI18n();
   const { theme, setTheme } = useTheme();
   const { settings } = useSystemSettings();
   const [open, setOpen] = useState(false);
@@ -67,17 +68,17 @@ export default function Topbar() {
   const hasAnyAppAccess = canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
   const mobileSections = [
     {
-      title: "Main",
+      title: t("Main"),
       show: hasAnyAppAccess,
-      items: [{ name: "Home", path: "/home", icon: Home }]
+      items: [{ name: t("Home"), path: "/home", icon: Home }]
     },
     {
-      title: "Channel Management",
+      title: t("Channel Management"),
       show: canViewChannelManagement,
       items: [
-        { name: "Overview", path: "/channel-management", icon: Video },
-        { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
-        { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
+        { name: t("Overview"), path: "/channel-management", icon: Video },
+        { name: t("Collaborators"), path: "/channel-management/collaborators", icon: Users },
+        { name: t("Sharing"), path: "/channel-management/sharing", icon: Percent }
       ]
     },
     {
@@ -85,10 +86,10 @@ export default function Topbar() {
       show: canViewReports || canViewPartnerGroups,
       items: [
         ...(canViewReports ? [
-          { name: "Dashboard", path: "/report-dashboard", icon: BarChart3 },
+          { name: t("Dashboard"), path: "/report-dashboard", icon: BarChart3 },
           { name: t("report"), path: "/reports", icon: FileSpreadsheet },
-          { name: "Export Multi", path: "/export-multi", icon: FileSpreadsheet },
-          { name: "Channel", path: "/channels", icon: Video },
+          { name: t("Export Multi"), path: "/export-multi", icon: FileSpreadsheet },
+          { name: t("Channel"), path: "/channels", icon: Video },
           { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign },
           { name: t("company"), path: "/companies", icon: BriefcaseBusiness }
         ] : []),
@@ -96,16 +97,16 @@ export default function Topbar() {
       ]
     },
     {
-      title: "Content ID",
+      title: t("Content ID"),
       show: canViewContentId,
       items: [
-        { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
-        { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
-        { name: "Product Manager", path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
-        { name: "Claim Manager", path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
-        { name: "Whitelist", path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
-        { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
-        { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
+        { name: t("Creator CSV"), path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
+        { name: t("Web Asset Reference"), path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
+        { name: t("Product Manager"), path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
+        { name: t("Claim Manager"), path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+        { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
+        { name: t("Label"), path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
+        { name: t("Artist"), path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
       ].filter((item) => item.show)
     },
     {
@@ -120,21 +121,21 @@ export default function Topbar() {
       ]
     },
     {
-      title: "Partner & Contract",
+      title: t("Partner & Contract"),
       show: canViewPartner,
       items: [
-        { name: "Overview", path: "/partners/overview", icon: BarChart3 },
-        { name: "Partner", path: "/partners/list", icon: Building2 },
-        { name: "Contract", path: "/partners/contracts", icon: FileSignature }
+        { name: t("Overview"), path: "/partners/overview", icon: BarChart3 },
+        { name: t("Partner"), path: "/partners/list", icon: Building2 },
+        { name: t("Contract"), path: "/partners/contracts", icon: FileSignature }
       ]
     },
     {
-      title: "Email",
+      title: t("Email"),
       show: canViewEmail,
-      items: [{ name: "Email Notification", path: "/email/notification", icon: Mail }]
+      items: [{ name: t("Email Notification"), path: "/email/notification", icon: Mail }]
     },
     {
-      title: "Account",
+      title: t("Account"),
       show: canViewAccount,
       items: [{ name: t("account"), path: "/account", icon: UserRound }]
     },
@@ -144,7 +145,7 @@ export default function Topbar() {
       items: [
         ...(canViewSettings ? [{ name: t("systemSettings"), path: "/settings/system", icon: Settings }] : []),
         ...(canViewSettings ? [{ name: t("network"), path: "/networks", icon: Network }] : []),
-        ...(canViewContentIdSettings ? [{ name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }] : [])
+        ...(canViewContentIdSettings ? [{ name: t("Content ID Setting"), path: "/settings/content-id", icon: Disc3 }] : [])
       ]
     }
   ].filter((section) => section.show && section.items.length);
@@ -195,7 +196,7 @@ export default function Topbar() {
       updateSavedUser(res.data.user, res.data.token);
       setSettingsOpen(false);
     } catch (error) {
-      setMessage(error.response?.data?.message || "Could not update profile");
+      setMessage(error.response?.data?.message || tk("Could not update profile"));
     } finally {
       setSaving(false);
     }
@@ -209,7 +210,7 @@ export default function Topbar() {
       return;
     }
     if (passwordForm.new_password !== passwordForm.confirm_password) {
-      setPasswordMessage("New password confirmation does not match");
+      setPasswordMessage(tk("New password confirmation does not match"));
       return;
     }
 
@@ -219,7 +220,7 @@ export default function Topbar() {
       await api.put("/auth/change-password", passwordForm);
       setPasswordOpen(false);
     } catch (error) {
-      setPasswordMessage(error.response?.data?.message || "Could not change password");
+      setPasswordMessage(error.response?.data?.message || tk("Could not change password"));
     } finally {
       setSaving(false);
     }
@@ -232,7 +233,7 @@ export default function Topbar() {
       const res = await api.post("/auth/2fa/setup");
       setTwoFactorSetup(res.data);
     } catch (error) {
-      setTwoFactorMessage(error.response?.data?.message || "Could not setup 2FA");
+      setTwoFactorMessage(error.response?.data?.message || tk("Could not setup 2FA"));
     } finally {
       setSaving(false);
     }
@@ -247,7 +248,7 @@ export default function Topbar() {
       updateSavedUser(res.data.user, res.data.token);
       setTwoFactorOpen(false);
     } catch (error) {
-      setTwoFactorMessage(error.response?.data?.message || "Could not enable 2FA");
+      setTwoFactorMessage(error.response?.data?.message || tk("Could not enable 2FA"));
     } finally {
       setSaving(false);
     }
@@ -262,7 +263,7 @@ export default function Topbar() {
       updateSavedUser(res.data.user, res.data.token);
       setTwoFactorOpen(false);
     } catch (error) {
-      setTwoFactorMessage(error.response?.data?.message || "Could not disable 2FA");
+      setTwoFactorMessage(error.response?.data?.message || tk("Could not disable 2FA"));
     } finally {
       setSaving(false);
     }
@@ -284,14 +285,14 @@ export default function Topbar() {
         <div className="hidden lg:block" />
 
         <div className="relative flex shrink-0 items-center gap-2">
-          <div className="flex items-center gap-1.5 sm:hidden" aria-label="Quick display preferences">
+          <div className="flex items-center gap-1.5 sm:hidden" aria-label={t("Quick display preferences")}>
             <button
               type="button"
               onClick={() => setLanguage(language === "en" ? "vi" : "en")}
               className="flex h-9 min-w-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-black text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-600 active:translate-y-px"
-              aria-label={`Current language is ${language === "vi" ? "Vietnamese" : "English"}. Switch to ${language === "vi" ? "English" : "Vietnamese"}`}
+              aria-label={t("Current language is {current}. Switch to {next}", { current: language === "vi" ? t("Vietnamese") : t("English"), next: language === "vi" ? t("English") : t("Vietnamese") })}
               aria-pressed={language === "vi"}
-              title={`Switch to ${language === "vi" ? "English" : "Vietnamese"}`}
+              title={t("Switch to {language}", { language: language === "vi" ? t("English") : t("Vietnamese") })}
             >
               {language === "vi" ? "VN" : "EN"}
             </button>
@@ -299,23 +300,23 @@ export default function Topbar() {
               type="button"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-600 active:translate-y-px"
-              aria-label={`Current theme is ${theme}. Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              aria-label={t("Current theme is {theme}. Switch to {next} theme", { theme: theme === "dark" ? t("dark") : t("light"), next: theme === "dark" ? t("light") : t("dark") })}
               aria-pressed={theme === "dark"}
-              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              title={t("Switch to {theme} theme", { theme: theme === "dark" ? t("light") : t("dark") })}
             >
               {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
             </button>
           </div>
 
           <div className="hidden items-center gap-2 sm:flex">
-            <div className="flex items-center rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm" role="group" aria-label="Language">
+            <div className="flex items-center rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm" role="group" aria-label={t("Language")}>
               <button
                 type="button"
                 onClick={() => setLanguage("en")}
                 className={`flex h-7 min-w-8 items-center justify-center rounded-[9px] px-2 text-[11px] font-black transition active:translate-y-px ${language === "en" ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
-                aria-label="Use English"
+                aria-label={t("Use English")}
                 aria-pressed={language === "en"}
-                title="English"
+                title={t("English")}
               >
                 EN
               </button>
@@ -323,9 +324,9 @@ export default function Topbar() {
                 type="button"
                 onClick={() => setLanguage("vi")}
                 className={`flex h-7 min-w-8 items-center justify-center rounded-[9px] px-2 text-[11px] font-black transition active:translate-y-px ${language === "vi" ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
-                aria-label="Use Vietnamese"
+                aria-label={t("Use Vietnamese")}
                 aria-pressed={language === "vi"}
-                title="Vietnamese"
+                title={t("Vietnamese")}
               >
                 VN
               </button>
@@ -335,9 +336,9 @@ export default function Topbar() {
               type="button"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-600 active:translate-y-px"
-              aria-label={`Current theme is ${theme}. Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              aria-label={t("Current theme is {theme}. Switch to {next} theme", { theme: theme === "dark" ? t("dark") : t("light"), next: theme === "dark" ? t("light") : t("dark") })}
               aria-pressed={theme === "dark"}
-              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              title={t("Switch to {theme} theme", { theme: theme === "dark" ? t("light") : t("dark") })}
             >
               {theme === "dark" ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}
             </button>
@@ -350,7 +351,7 @@ export default function Topbar() {
               setOpen(false);
             }}
             className="lg:hidden flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:border-blue-200"
-            aria-label="Open navigation"
+            aria-label={t("Open navigation")}
           >
             <Menu size={20} />
           </button>
@@ -367,7 +368,7 @@ export default function Topbar() {
               {user?.full_name?.charAt(0)?.toUpperCase() || "U"}
             </span>
             <span className="hidden sm:block text-left">
-              <span className="block text-xs font-black text-slate-900 leading-tight">{user?.full_name || "User"}</span>
+              <span className="block text-xs font-black text-slate-900 leading-tight">{user?.full_name || t("User")}</span>
               <span className="block text-[10px] font-bold text-slate-400 leading-tight">{user?.role}</span>
             </span>
             <ChevronDown size={15} className="text-slate-400" />
@@ -419,16 +420,16 @@ export default function Topbar() {
                 <p className="text-sm text-slate-500 truncate">{user?.email}</p>
               </div>
               <button type="button" onClick={openSettings} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
-                <Settings size={16} /> Profile settings
+                <Settings size={16} /> {t("Profile settings")}
               </button>
               <button type="button" onClick={openPasswordModal} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
-                <LockKeyhole size={16} /> Change password
+                <LockKeyhole size={16} /> {t("Change password")}
               </button>
               <button type="button" onClick={openTwoFactorModal} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
-                <ShieldCheck size={16} /> Two-factor authentication
+                <ShieldCheck size={16} /> {t("Two-factor authentication")}
               </button>
               <button type="button" onClick={handleLogout} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-red-600 hover:bg-red-50">
-                <LogOut size={16} /> Logout
+                <LogOut size={16} /> {t("Logout")}
               </button>
             </div>
           )}
@@ -440,31 +441,31 @@ export default function Topbar() {
           <form onSubmit={saveProfile} className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
             <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-black text-slate-950">Profile settings</h2>
-                <p className="text-sm text-slate-500 mt-1">Update your account information.</p>
+                <h2 className="text-2xl font-black text-slate-950">{t("Profile settings")}</h2>
+                <p className="text-sm text-slate-500 mt-1">{t("Update your account information.")}</p>
               </div>
               <button type="button" onClick={() => setSettingsOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
             </div>
 
             <div className="p-6 space-y-4">
-              {message && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{message}</div>}
+              {message && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{tm(message)}</div>}
               <label className="block">
-                <span className="font-black text-slate-700 mb-2 block">Full name</span>
+                <span className="font-black text-slate-700 mb-2 block">{t("Full name")}</span>
                 <div className="flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3">
                   <UserRound size={18} className="text-slate-400" />
                   <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} className="w-full outline-none" required />
                 </div>
               </label>
               <label className="block">
-                <span className="font-black text-slate-700 mb-2 block">Email</span>
+                <span className="font-black text-slate-700 mb-2 block">{t("Email")}</span>
                 <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" required />
               </label>
             </div>
 
             <div className="px-6 py-5 border-t border-slate-200 flex justify-end gap-3">
-              <button type="button" onClick={() => setSettingsOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Cancel</button>
+              <button type="button" onClick={() => setSettingsOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">{t("Cancel")}</button>
               <button disabled={saving} className="px-5 py-3 rounded-2xl bg-blue-600 text-white font-black flex items-center gap-2 disabled:opacity-60">
-                <Save size={18} /> Save profile
+                <Save size={18} /> {t("Save profile")}
               </button>
             </div>
           </form>
@@ -476,24 +477,24 @@ export default function Topbar() {
           <form onSubmit={savePassword} className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
             <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-black text-slate-950">Change password</h2>
-                <p className="text-sm text-slate-500 mt-1">Use a strong password with uppercase, lowercase, number, and special character.</p>
+                <h2 className="text-2xl font-black text-slate-950">{t("Change password")}</h2>
+                <p className="text-sm text-slate-500 mt-1">{t("Use a strong password with uppercase, lowercase, number, and special character.")}</p>
               </div>
               <button type="button" onClick={() => setPasswordOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
             </div>
 
             <div className="p-6 space-y-4">
-              {passwordMessage && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{passwordMessage}</div>}
-              <PasswordInput label="Current password" value={passwordForm.current_password} onChange={(value) => setPasswordForm({ ...passwordForm, current_password: value })} shown={showPasswords.current} onToggle={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })} />
-              <PasswordInput label="New password" value={passwordForm.new_password} onChange={(value) => setPasswordForm({ ...passwordForm, new_password: value })} shown={showPasswords.next} onToggle={() => setShowPasswords({ ...showPasswords, next: !showPasswords.next })} />
-              <PasswordInput label="Confirm new password" value={passwordForm.confirm_password} onChange={(value) => setPasswordForm({ ...passwordForm, confirm_password: value })} shown={showPasswords.confirm} onToggle={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })} />
-              <p className="text-xs font-bold text-slate-500">Required: at least 8 characters, uppercase, lowercase, number, and special character.</p>
+              {passwordMessage && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{tm(passwordMessage)}</div>}
+              <PasswordInput label={t("Current password")} value={passwordForm.current_password} onChange={(value) => setPasswordForm({ ...passwordForm, current_password: value })} shown={showPasswords.current} onToggle={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })} />
+              <PasswordInput label={t("New password")} value={passwordForm.new_password} onChange={(value) => setPasswordForm({ ...passwordForm, new_password: value })} shown={showPasswords.next} onToggle={() => setShowPasswords({ ...showPasswords, next: !showPasswords.next })} />
+              <PasswordInput label={t("Confirm new password")} value={passwordForm.confirm_password} onChange={(value) => setPasswordForm({ ...passwordForm, confirm_password: value })} shown={showPasswords.confirm} onToggle={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })} />
+              <p className="text-xs font-bold text-slate-500">{t("Required: at least 8 characters, uppercase, lowercase, number, and special character.")}</p>
             </div>
 
             <div className="px-6 py-5 border-t border-slate-200 flex justify-end gap-3">
-              <button type="button" onClick={() => setPasswordOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Cancel</button>
+              <button type="button" onClick={() => setPasswordOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">{t("Cancel")}</button>
               <button disabled={saving} className="px-5 py-3 rounded-2xl bg-blue-600 text-white font-black flex items-center gap-2 disabled:opacity-60">
-                <LockKeyhole size={18} /> Change password
+                <LockKeyhole size={18} /> {t("Change password")}
               </button>
             </div>
           </form>
@@ -505,23 +506,23 @@ export default function Topbar() {
           <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
             <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-black text-slate-950">Two-factor authentication</h2>
-                <p className="text-sm text-slate-500 mt-1">Use Google Authenticator or any TOTP app to protect your login.</p>
+                <h2 className="text-2xl font-black text-slate-950">{t("Two-factor authentication")}</h2>
+                <p className="text-sm text-slate-500 mt-1">{t("Use Google Authenticator or any TOTP app to protect your login.")}</p>
               </div>
               <button type="button" onClick={() => setTwoFactorOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
             </div>
 
             <div className="p-6 space-y-4">
-              {twoFactorMessage && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{twoFactorMessage}</div>}
+              {twoFactorMessage && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{tm(twoFactorMessage)}</div>}
 
               {Number(user?.two_factor_enabled || 0) === 1 ? (
                 <form onSubmit={disableTwoFactor} className="space-y-4">
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-700 font-bold">
-                    2FA is currently enabled for this account.
+                    {t("2FA is currently enabled for this account.")}
                   </div>
-                  <PasswordInput label="Current password" value={twoFactorForm.password} onChange={(value) => setTwoFactorForm({ ...twoFactorForm, password: value })} shown={showPasswords.twoFactorPassword} onToggle={() => setShowPasswords({ ...showPasswords, twoFactorPassword: !showPasswords.twoFactorPassword })} />
+                  <PasswordInput label={t("Current password")} value={twoFactorForm.password} onChange={(value) => setTwoFactorForm({ ...twoFactorForm, password: value })} shown={showPasswords.twoFactorPassword} onToggle={() => setShowPasswords({ ...showPasswords, twoFactorPassword: !showPasswords.twoFactorPassword })} />
                   <label className="block">
-                    <span className="font-black text-slate-700 mb-2 block">Authenticator code</span>
+                    <span className="font-black text-slate-700 mb-2 block">{t("Authenticator code")}</span>
                     <input
                       value={twoFactorForm.code}
                       onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })}
@@ -531,28 +532,28 @@ export default function Topbar() {
                       required
                     />
                   </label>
-                  <button disabled={saving} className="w-full rounded-2xl bg-red-600 px-5 py-3 font-black text-white disabled:opacity-60">Disable 2FA</button>
+                  <button disabled={saving} className="w-full rounded-2xl bg-red-600 px-5 py-3 font-black text-white disabled:opacity-60">{t("Disable 2FA")}</button>
                 </form>
               ) : (
                 <div className="space-y-4">
                   {!twoFactorSetup ? (
                     <button onClick={setupTwoFactor} disabled={saving} className="w-full rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-60">
-                      Generate QR code
+                      {t("Generate QR code")}
                     </button>
                   ) : (
                     <form onSubmit={enableTwoFactor} className="space-y-4">
                       <div className="grid gap-4 md:grid-cols-[260px_1fr]">
                         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-center">
-                          <img src={twoFactorSetup.qr_url} alt="2FA QR code" className="w-56 h-56" />
+                          <img src={twoFactorSetup.qr_url} alt={t("2FA QR code")} className="w-56 h-56" />
                         </div>
                         <div className="rounded-3xl border border-slate-200 p-4">
-                          <p className="font-black text-slate-950">Scan this QR in Google Authenticator.</p>
-                          <p className="mt-2 text-sm text-slate-500">If the QR image does not load, add this secret manually:</p>
+                          <p className="font-black text-slate-950">{t("Scan this QR in Google Authenticator.")}</p>
+                          <p className="mt-2 text-sm text-slate-500">{t("If the QR image does not load, add this secret manually:")}</p>
                           <p className="mt-3 break-all rounded-2xl bg-slate-100 p-3 font-mono text-sm font-black text-slate-700">{twoFactorSetup.secret}</p>
                         </div>
                       </div>
                       <label className="block">
-                        <span className="font-black text-slate-700 mb-2 block">Enter 6-digit code</span>
+                        <span className="font-black text-slate-700 mb-2 block">{t("Enter 6-digit code")}</span>
                         <input
                           value={twoFactorForm.code}
                           onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })}
@@ -563,7 +564,7 @@ export default function Topbar() {
                           required
                         />
                       </label>
-                      <button disabled={saving} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white disabled:opacity-60">Enable 2FA</button>
+                      <button disabled={saving} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white disabled:opacity-60">{t("Enable 2FA")}</button>
                     </form>
                   )}
                 </div>

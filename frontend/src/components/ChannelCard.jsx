@@ -12,6 +12,7 @@ import {
   Info
 } from "lucide-react";
 import { useState } from "react";
+import { useI18n } from "../context/I18nContext";
 
 function formatNumber(value) {
   const number = Number(value || 0);
@@ -20,16 +21,6 @@ function formatNumber(value) {
     notation: number >= 1000000 ? "compact" : "standard",
     maximumFractionDigits: 1
   }).format(number);
-}
-
-function formatDate(date) {
-  if (!date) return "N/A";
-
-  try {
-    return new Date(date).toLocaleDateString("vi-VN");
-  } catch {
-    return "N/A";
-  }
 }
 
 function getLatestVideos(channel) {
@@ -50,6 +41,7 @@ export default function ChannelCard({
   canRefresh = false,
   canDelete = false
 }) {
+  const { t, tk, formatDate } = useI18n();
   const [copied, setCopied] = useState(false);
   const latestVideos = getLatestVideos(channel).slice(0, 2);
   const isError = channel.status === "error";
@@ -72,19 +64,19 @@ export default function ChannelCard({
 
   const stats = [
     {
-      label: "Views",
+      label: tk("Views"),
       value: formatNumber(channel.view_count),
       icon: Eye,
       color: "text-blue-600"
     },
     {
-      label: "Subs",
+      label: tk("Subs"),
       value: formatNumber(channel.subscriber_count),
       icon: Users,
       color: "text-emerald-600"
     },
     {
-      label: "Videos",
+      label: tk("Videos"),
       value: formatNumber(channel.video_count),
       icon: Video,
       color: "text-purple-600"
@@ -120,7 +112,7 @@ export default function ChannelCard({
                   ].join(" ")}
                   title={channel.status_error || ""}
                 >
-                  {isError ? "error" : "active"}
+                  {isError ? t("error") : t("active")}
                 </span>
 
                 <a
@@ -128,7 +120,7 @@ export default function ChannelCard({
                   target="_blank"
                   rel="noreferrer"
                   className="w-8 h-8 shrink-0 rounded-xl bg-slate-100 hover:bg-blue-50 flex items-center justify-center text-slate-600 hover:text-blue-600"
-                  title="Mở channel trên YouTube"
+                  title={t("Open channel on YouTube")}
                 >
                   <ExternalLink size={16} />
                 </a>
@@ -137,7 +129,7 @@ export default function ChannelCard({
                   type="button"
                   onClick={() => onOpenDetail?.(channel)}
                   className="w-8 h-8 shrink-0 rounded-xl bg-slate-100 hover:bg-emerald-50 flex items-center justify-center text-slate-600 hover:text-emerald-700"
-                  title="Xem chi tiết channel"
+                  title={t("View channel details")}
                 >
                   <Info size={16} />
                 </button>
@@ -152,7 +144,7 @@ export default function ChannelCard({
                   type="button"
                   onClick={handleCopyChannelId}
                   className="w-6 h-6 shrink-0 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center"
-                  title="Copy Channel ID"
+                  title={t("Copy Channel ID")}
                 >
                   {copied ? <Check size={13} /> : <Copy size={13} />}
                 </button>
@@ -168,7 +160,7 @@ export default function ChannelCard({
                       className="inline-flex items-center gap-1.5 text-slate-600"
                     >
                       <Icon size={13} className={stat.color} />
-                      <span>{stat.label}</span>
+                      <span>{t(stat.label)}</span>
                       <span className="font-black text-slate-900">
                         {stat.value}
                       </span>
@@ -182,7 +174,7 @@ export default function ChannelCard({
           <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3">
             <div className="flex items-center gap-2 text-sm text-slate-800 font-black mb-2">
               <PlayCircle size={16} className="text-red-600" />
-              <span>2 video mới nhất</span>
+              <span>{t("2 latest videos")}</span>
             </div>
 
             {latestVideos.length > 0 ? (
@@ -198,24 +190,24 @@ export default function ChannelCard({
                   >
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900 line-clamp-1">
-                        {video.title || "Video YouTube"}
+                        {video.title || t("YouTube video")}
                       </p>
 
                       <p className="text-xs text-slate-500">
-                        Published: {formatDate(video.published_at)}
+                        {t("Published: {date}", { date: formatDate(video.published_at) || "N/A" })}
                       </p>
                     </div>
 
                     <span className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-bold text-white">
                       <PlayCircle size={13} />
-                      Xem
+                      {t("Watch")}
                     </span>
                   </a>
                 ))}
               </div>
             ) : (
               <p className="text-sm text-slate-500">
-                Chưa có dữ liệu video. Bấm Refresh để cập nhật.
+                {t("No video data yet. Click Refresh to update.")}
               </p>
             )}
           </div>
@@ -223,7 +215,7 @@ export default function ChannelCard({
           <div className="flex xl:flex-col items-center justify-between xl:justify-center gap-2">
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <Calendar size={14} />
-              <span>{formatDate(channel.published_at)}</span>
+              <span>{formatDate(channel.published_at) || "N/A"}</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -231,7 +223,7 @@ export default function ChannelCard({
                 <button
                   onClick={() => onRefresh(channel.id)}
                   className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 flex items-center justify-center"
-                  title="Refresh"
+                  title={t("Refresh")}
                 >
                   <RefreshCw size={15} />
                 </button>
@@ -241,7 +233,7 @@ export default function ChannelCard({
                 <button
                   onClick={() => onDelete(channel.id)}
                   className="w-8 h-8 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center"
-                  title="Delete"
+                  title={t("Delete")}
                 >
                   <Trash2 size={15} />
                 </button>

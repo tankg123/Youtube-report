@@ -2,6 +2,28 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useI18n } from "../context/I18nContext";
 
+// The Content ID, Report and settings pages are translated through the i18n layer (t() keys), so the
+// DOM walker below must skip them: it would rewrite data there (e.g. "channels" / "kênh" inside titles).
+const WALKER_EXCLUDED_PREFIXES = ["/content-id"];
+const WALKER_EXCLUDED_PATHS = new Set([
+  "/report-dashboard",
+  "/partner-dashboard",
+  "/reports",
+  "/export-multi",
+  "/channels",
+  "/exchange-rates",
+  "/companies",
+  "/groups",
+  "/settings/content-id",
+  "/settings/system"
+]);
+
+function isWalkerExcluded(pathname) {
+  const path = String(pathname || "").replace(/\/+$/, "") || "/";
+  if (WALKER_EXCLUDED_PATHS.has(path)) return true;
+  return WALKER_EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
 const viToEn = {
   "Kênh": "Channel",
   "Báo cáo": "Report",
@@ -296,6 +318,7 @@ export default function LanguageRuntime() {
   const location = useLocation();
 
   useEffect(() => {
+    if (isWalkerExcluded(location.pathname)) return undefined;
     const apply = () => walk(document.body, language);
     apply();
     const observer = new MutationObserver(apply);

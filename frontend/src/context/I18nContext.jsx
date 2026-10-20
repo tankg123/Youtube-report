@@ -1,243 +1,64 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { cloneElement, createContext, isValidElement, useContext, useEffect, useMemo, useState } from "react";
+import { normalizeLanguage, setLanguage as setCoreLanguage, tk, translate, translateMessage } from "../i18n/index.js";
+import { formatDate, formatDateTime, formatNumber, localeOf, regionName } from "../i18n/format.js";
+import { translations } from "../i18n/legacy.js";
+
+// The short-key dictionary (t("report"), t("save"), …) stays importable from here.
+export { translations };
 
 const I18nContext = createContext(null);
+const STORAGE_KEY = "language";
 
-export const translations = {
-  en: {
-    appTitle: "ANS Network",
-    appSubtitle: "MCN Manager System",
-    channel: "Channel",
-    video: "Video",
-    report: "Report",
-    network: "Network",
-    exchangeRates: "Exchange Rates",
-    company: "Company",
-    partner: "Partner",
-    group: "Group",
-    account: "Account",
-    settings: "Settings",
-    systemSettings: "System Settings",
-    contentIdSettings: "Content ID Settings",
-    dashboard: "Dashboard",
-    overview: "Overview",
-    expense: "Expense",
-    expenseGroups: "Expense Groups",
-    transactions: "Transactions",
-    revenue: "Revenue",
-    accounts: "Accounts",
-    collaborator: "Collaborator",
-    collaborators: "Collaborators",
-    sharing: "Sharing",
-    apiStatus: "API Status",
-    ready: "Ready",
-    logout: "Logout",
-    admin: "ADMIN",
-    add: "Add",
-    create: "Create",
-    edit: "Edit",
-    delete: "Delete",
-    save: "Save",
-    cancel: "Cancel",
-    refresh: "Refresh",
-    sync: "Sync",
-    loading: "Loading",
-    action: "Action",
-    search: "Search",
-    month: "Month",
-    description: "Description",
-    created: "Created",
-    updated: "Updated",
-    name: "Name",
-    email: "Email",
-    phone: "Phone",
-    address: "Address",
-    bank: "Bank",
-    accountNumber: "Account",
-    noData: "No data yet.",
-    language: "Language",
-    english: "English",
-    vietnamese: "Vietnamese",
-    copied: "Copied",
-    errorLoad: "Could not load data",
-    errorSave: "Could not save data",
-    errorDelete: "Could not delete data",
-    expenseOverview: "Expense Overview",
-    expenseOverviewDescription: "Account balances, spending, revenue, and pending reimbursements.",
-    accountName: "Account name",
-    accountNumber: "Account number",
-    accountType: "Account type",
-    owner: "Owner",
-    currency: "Currency",
-    revenueType: "Revenue type",
-    expenseGroup: "Expense group",
-    groupName: "Group name",
-    transaction: "Transaction",
-    amount: "Amount",
-    balance: "Balance",
-    monthExpense: "Month expense",
-    monthRevenue: "Month revenue",
-    pendingDebts: "Pending debts",
-    topCategories: "Top categories",
-    noPendingDebt: "No pending debt.",
-    noCategoryData: "No category data.",
-    noAccountData: "No account data yet.",
-    addAccount: "Add account",
-    editAccount: "Edit account",
-    addExpenseGroup: "Add expense group",
-    editExpenseGroup: "Edit expense group",
-    addTransaction: "Add transaction",
-    editTransaction: "Edit transaction",
-    addRevenue: "Add revenue",
-    editRevenue: "Edit revenue",
-    receiptImageFile: "Receipt image / file",
-    uploadReceipt: "Upload or take a receipt photo",
-    debtStatus: "Debt status",
-    vendor: "Vendor",
-    note: "Note",
-    by: "By",
-    date: "Date",
-    category: "Category",
-    noCategory: "No category",
-    noDebt: "No debt",
-    pendingReimbursement: "Pending reimbursement",
-    paidBack: "Paid back",
-    auto: "Auto"
-    ,
-    companyOwner: "Company",
-    personal: "Personal",
-    external: "External",
-    deleteConfirm: "Delete",
-    revenuePlaceholder: "YouTube revenue, refund, deposit..."
-  },
-  vi: {
-    appTitle: "ANS Network",
-    appSubtitle: "MCN Manager System",
-    channel: "Kênh",
-    video: "Video",
-    report: "Báo cáo",
-    network: "Network",
-    exchangeRates: "Tỷ giá",
-    company: "Công ty",
-    partner: "Đối tác",
-    group: "Nhóm",
-    account: "Tài khoản",
-    settings: "Cài đặt",
-    systemSettings: "Cài đặt hệ thống",
-    contentIdSettings: "Cài đặt Content ID",
-    dashboard: "Tổng quan",
-    overview: "Tổng quan",
-    expense: "Chi phí",
-    expenseGroups: "Nhóm chi tiêu",
-    transactions: "Giao dịch",
-    revenue: "Doanh thu",
-    accounts: "Tài khoản",
-    collaborator: "Cộng tác viên",
-    collaborators: "Cộng tác viên",
-    sharing: "Chia sẻ",
-    apiStatus: "Trạng thái API",
-    ready: "Sẵn sàng",
-    logout: "Đăng xuất",
-    admin: "ADMIN",
-    add: "Thêm",
-    create: "Tạo",
-    edit: "Sửa",
-    delete: "Xóa",
-    save: "Lưu",
-    cancel: "Hủy",
-    refresh: "Làm mới",
-    sync: "Đồng bộ",
-    loading: "Đang tải",
-    action: "Thao tác",
-    search: "Tìm kiếm",
-    month: "Tháng",
-    description: "Mô tả",
-    created: "Đã tạo",
-    updated: "Đã cập nhật",
-    name: "Tên",
-    email: "Email",
-    phone: "Số điện thoại",
-    address: "Địa chỉ",
-    bank: "Ngân hàng",
-    accountNumber: "Tài khoản",
-    noData: "Chưa có dữ liệu.",
-    language: "Ngôn ngữ",
-    english: "Tiếng Anh",
-    vietnamese: "Tiếng Việt",
-    copied: "Đã copy",
-    errorLoad: "Không thể tải dữ liệu",
-    errorSave: "Không thể lưu dữ liệu",
-    errorDelete: "Không thể xóa dữ liệu",
-    expenseOverview: "Tổng quan chi phí",
-    expenseOverviewDescription: "Số dư tài khoản, chi tiêu, doanh thu và công nợ chờ hoàn trả.",
-    accountName: "Tên tài khoản",
-    accountNumber: "Số tài khoản",
-    accountType: "Loại tài khoản",
-    owner: "Chủ sở hữu",
-    currency: "Loại tiền",
-    revenueType: "Loại doanh thu",
-    expenseGroup: "Nhóm chi tiêu",
-    groupName: "Tên nhóm",
-    transaction: "Giao dịch",
-    amount: "Số tiền",
-    balance: "Số dư",
-    monthExpense: "Chi tháng này",
-    monthRevenue: "Thu tháng này",
-    pendingDebts: "Công nợ chờ hoàn trả",
-    topCategories: "Nhóm chi tiêu cao nhất",
-    noPendingDebt: "Không có công nợ.",
-    noCategoryData: "Chưa có dữ liệu nhóm.",
-    noAccountData: "Chưa có dữ liệu tài khoản.",
-    addAccount: "Thêm tài khoản",
-    editAccount: "Sửa tài khoản",
-    addExpenseGroup: "Thêm nhóm chi tiêu",
-    editExpenseGroup: "Sửa nhóm chi tiêu",
-    addTransaction: "Thêm giao dịch",
-    editTransaction: "Sửa giao dịch",
-    addRevenue: "Thêm doanh thu",
-    editRevenue: "Sửa doanh thu",
-    receiptImageFile: "Hình / file hóa đơn",
-    uploadReceipt: "Tải lên hoặc chụp hóa đơn",
-    debtStatus: "Trạng thái công nợ",
-    vendor: "Nhà cung cấp",
-    note: "Ghi chú",
-    by: "Người thao tác",
-    date: "Ngày",
-    category: "Nhóm",
-    noCategory: "Không có nhóm",
-    noDebt: "Không công nợ",
-    pendingReimbursement: "Chờ hoàn trả",
-    paidBack: "Đã hoàn trả",
-    auto: "Tự động"
-    ,
-    companyOwner: "Công ty",
-    personal: "Cá nhân",
-    external: "Bên ngoài",
-    deleteConfirm: "Xóa",
-    revenuePlaceholder: "Doanh thu YouTube, hoàn tiền, nạp tiền..."
+function readStoredLanguage() {
+  try {
+    return normalizeLanguage(localStorage.getItem(STORAGE_KEY) || "en");
+  } catch {
+    return "en";
   }
-};
+}
+
+// translate() returns an array when a {placeholder} received a React element: give each element a key.
+function withKeys(result) {
+  if (!Array.isArray(result)) return result;
+  return result.map((part, index) => (isValidElement(part) && part.key == null ? cloneElement(part, { key: index }) : part));
+}
 
 export function I18nProvider({ children }) {
-  const [language, setLanguageState] = useState(() => localStorage.getItem("language") || "en");
+  // The core store is set in the initializer so plain modules (utils, constants) translate in the right
+  // language from the very first render.
+  const [language, setLanguageState] = useState(() => setCoreLanguage(readStoredLanguage()));
 
-  function setLanguage(nextLanguage) {
-    const normalized = nextLanguage === "vi" ? "vi" : "en";
-    localStorage.setItem("language", normalized);
-    setLanguageState(normalized);
-    document.documentElement.lang = normalized;
-  }
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   const value = useMemo(() => {
-    const current = translations[language] || translations.en;
+    function setLanguage(next) {
+      const normalized = normalizeLanguage(next);
+      try {
+        localStorage.setItem(STORAGE_KEY, normalized);
+      } catch {
+        // storage unavailable (private mode): the choice lasts for this session only
+      }
+      setCoreLanguage(normalized);
+      setLanguageState(normalized);
+    }
+
     return {
       language,
       setLanguage,
-      t(key, fallback) {
-        return current[key] || translations.en[key] || fallback || key;
-      },
-      pick(copy) {
-        return copy?.[language] || copy?.en || {};
-      }
+      locale: localeOf(language),
+      // t("English text", { count }) → current language; the English text is the key.
+      t: (key, params) => withKeys(translate(key, params, language)),
+      // tm(message) → runtime / server message in the current language (exact entry, then rules).
+      tm: (message) => translateMessage(message, language),
+      // tk("English text") → marks a canonical string kept in state or a constant (identity).
+      tk,
+      pick: (copy) => copy?.[language] || copy?.en || {},
+      formatDate: (value, options) => formatDate(value, language, options),
+      formatDateTime: (value, options) => formatDateTime(value, language, options),
+      formatNumber: (value, options) => formatNumber(value, language, options),
+      regionName: (code, fallback) => regionName(code, language, fallback)
     };
   }, [language]);
 

@@ -31,6 +31,7 @@ import { useI18n } from "../context/I18nContext";
 
 const NETWORK_COLORS = ["#16a36a", "#3b82f6", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4"];
 
+/* eslint-disable i18n/no-untranslated -- bilingual copy table of this page: copy = reportCopy[language] renders the en branch in English and the vi branch in Vietnamese */
 const reportCopy = {
   en: {
     eyebrow: "Revenue intelligence",
@@ -223,6 +224,7 @@ const reportCopy = {
     rows: "dòng"
   }
 };
+/* eslint-enable i18n/no-untranslated */
 
 function numeric(value) {
   return Number(value || 0);
@@ -515,7 +517,7 @@ function LoadingState({ copy }) {
 
 export default function ReportDashboardPage() {
   const navigate = useNavigate();
-  const { language } = useI18n();
+  const { language, t } = useI18n();
   const copy = reportCopy[language] || reportCopy.en;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -899,7 +901,7 @@ export default function ReportDashboardPage() {
                     onClick={() => chooseReportingMonth(item)}
                     onKeyDown={moveMonthOptionFocus}
                   >
-                    <span className="report-overview-month-option-index">M{item.slice(5)}</span>
+                    <span className="report-overview-month-option-index">{t("M{month}", { month: item.slice(5) })}</span>
                     <span className="report-overview-month-option-copy"><strong>{monthLabel(item, language)}</strong><small>{item}</small></span>
                     <span className="report-overview-month-option-state">
                       {item === monthOptions[0] && <em>{copy.latestPeriod}</em>}

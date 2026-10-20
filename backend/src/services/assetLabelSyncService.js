@@ -1,9 +1,25 @@
 const axios = require("axios");
 const db = require("../config/database");
-const { getFreshAccessTokenForAccount, listAccounts } = require("./claimService");
+const { getAccessToken, getConnectedNetwork } = require("./googleContentIdService");
 
 const CONTENT_ID_API_BASE = "https://youtubepartner.googleapis.com/youtube/partner/v1";
 const MAX_PAGES_PER_CMS = 100;
+
+// Connected CMS networks that can be read with the Partner API.
+function listAccounts() {
+  return db.prepare(`
+    SELECT id, name, network_code
+    FROM networks
+    WHERE cms_auth_status = 'connected' AND network_code IS NOT NULL AND trim(network_code) != ''
+    ORDER BY name COLLATE NOCASE ASC
+  `).all().map((row) => ({ id: row.id, cms_id: String(row.network_code || "").trim(), cms_name: row.name }));
+}
+
+async function getFreshAccessTokenForAccount(accountId) {
+  const network = getConnectedNetwork(accountId);
+  const accessToken = await getAccessToken(network);
+  return { accessToken, account: { id: network.id, cms_id: String(network.network_code || "").trim(), cms_name: network.name } };
+}
 
 function normalizeLabelName(label) {
   if (typeof label === "string") return label.trim();

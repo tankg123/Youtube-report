@@ -591,6 +591,35 @@ db.exec(`
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
   );
 
+  CREATE TABLE IF NOT EXISTS content_id_claim_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_id TEXT NOT NULL,
+    action TEXT NOT NULL DEFAULT 'release',
+    network_id INTEGER NOT NULL,
+    network_name TEXT,
+    content_owner_id TEXT,
+    claim_id TEXT NOT NULL,
+    video_id TEXT,
+    video_title TEXT,
+    channel_title TEXT,
+    asset_id TEXT,
+    asset_title TEXT,
+    isrc TEXT,
+    content_type TEXT,
+    previous_status TEXT,
+    result TEXT NOT NULL,
+    result_status TEXT,
+    message TEXT,
+    note TEXT,
+    response_json TEXT,
+    duration_ms INTEGER,
+    created_by INTEGER,
+    created_by_name TEXT,
+    created_by_email TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  );
+
   CREATE TABLE IF NOT EXISTS email_notification_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     partner_id INTEGER,
@@ -715,6 +744,68 @@ db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_track_artists_track ON conten
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_track_artists_artist ON content_id_track_artists(artist_id)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_claims_network_status ON content_id_claims(network_id, status)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_claims_video ON content_id_claims(video_id)");
+
+// Claim Manager audit rows must outlive the CMS network they were written for: each row already
+// carries the network name and content owner id, and deleting a network in Settings must not
+// erase the release history. Databases created with the earlier ON DELETE CASCADE are rebuilt
+// once (SQLite cannot drop a foreign key in place); the indexes are recreated right below.
+if (db.pragma("foreign_key_list(content_id_claim_events)").some((fk) => fk.table === "networks")) {
+  const previousForeignKeys = db.pragma("foreign_keys", { simple: true });
+  db.pragma("foreign_keys = OFF");
+  db.exec(`
+    BEGIN;
+
+    CREATE TABLE content_id_claim_events_migration (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      operation_id TEXT NOT NULL,
+      action TEXT NOT NULL DEFAULT 'release',
+      network_id INTEGER NOT NULL,
+      network_name TEXT,
+      content_owner_id TEXT,
+      claim_id TEXT NOT NULL,
+      video_id TEXT,
+      video_title TEXT,
+      channel_title TEXT,
+      asset_id TEXT,
+      asset_title TEXT,
+      isrc TEXT,
+      content_type TEXT,
+      previous_status TEXT,
+      result TEXT NOT NULL,
+      result_status TEXT,
+      message TEXT,
+      note TEXT,
+      response_json TEXT,
+      duration_ms INTEGER,
+      created_by INTEGER,
+      created_by_name TEXT,
+      created_by_email TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    INSERT INTO content_id_claim_events_migration (
+      id, operation_id, action, network_id, network_name, content_owner_id, claim_id, video_id, video_title, channel_title,
+      asset_id, asset_title, isrc, content_type, previous_status, result, result_status, message, note, response_json,
+      duration_ms, created_by, created_by_name, created_by_email, created_at
+    )
+    SELECT id, operation_id, action, network_id, network_name, content_owner_id, claim_id, video_id, video_title, channel_title,
+      asset_id, asset_title, isrc, content_type, previous_status, result, result_status, message, note, response_json,
+      duration_ms, created_by, created_by_name, created_by_email, created_at
+    FROM content_id_claim_events;
+
+    DROP TABLE content_id_claim_events;
+    ALTER TABLE content_id_claim_events_migration RENAME TO content_id_claim_events;
+
+    COMMIT;
+  `);
+  db.pragma(`foreign_keys = ${previousForeignKeys ? "ON" : "OFF"}`);
+}
+
+db.exec("CREATE INDEX IF NOT EXISTS idx_cid_claim_events_network_claim ON content_id_claim_events(network_id, claim_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_cid_claim_events_created ON content_id_claim_events(created_at)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_cid_claim_events_operation ON content_id_claim_events(operation_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_cid_claim_events_result ON content_id_claim_events(result)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_expense_transactions_account_date ON expense_transactions(account_id, transaction_date)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_expense_revenues_account_date ON expense_revenues(account_id, revenue_date)");
 
@@ -876,6 +967,175 @@ if (!existingAdmin) {
   console.log("Default admin created:");
   console.log("Email: admin");
   console.log("Password: Hoangtinh@0910");
+}
+
+// CMS Delivery: products delivered straight to YouTube CMS through the Content ID API
+// (one sound_recording asset + audio reference per track), kept locally for later management.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS content_id_delivery_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    network_id INTEGER NOT NULL,
+    network_name TEXT,
+    content_owner_id TEXT,
+    title TEXT NOT NULL,
+    artist TEXT,
+    upc TEXT,
+    label TEXT,
+    genre TEXT,
+    release_date TEXT,
+    artwork_name TEXT,
+    artwork_data_url TEXT,
+    notes TEXT,
+    asset_labels TEXT,
+    ownership_json TEXT,
+    match_policy_id TEXT,
+    match_policy_name TEXT,
+    reference_content_type TEXT NOT NULL DEFAULT 'audio',
+    reference_urgent INTEGER NOT NULL DEFAULT 0,
+    skip_duplicates INTEGER NOT NULL DEFAULT 1,
+    include_reference INTEGER NOT NULL DEFAULT 1,
+    delete_reference_after_delivery INTEGER NOT NULL DEFAULT 0,
+    asset_type TEXT NOT NULL DEFAULT 'sound_recording',
+    track_count INTEGER NOT NULL DEFAULT 0,
+    delivered_count INTEGER NOT NULL DEFAULT 0,
+    completed_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft',
+    error_message TEXT,
+    created_by INTEGER,
+    created_by_name TEXT,
+    delivered_at DATETIME,
+    last_synced_at DATETIME,
+    job_started_at DATETIME,
+    job_finished_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (network_id) REFERENCES networks(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_products_network ON content_id_delivery_products(network_id, status);
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_products_upc ON content_id_delivery_products(upc);
+
+  CREATE TABLE IF NOT EXISTS content_id_delivery_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    track_number INTEGER NOT NULL DEFAULT 0,
+    title TEXT NOT NULL,
+    artist TEXT,
+    isrc TEXT NOT NULL,
+    custom_id TEXT,
+    notes TEXT,
+    description TEXT,
+    source_url TEXT,
+    asset_labels TEXT,
+    file_name TEXT,
+    file_size INTEGER,
+    file_path TEXT,
+    file_mime TEXT,
+    file_sha256 TEXT,
+    file_uploaded_at DATETIME,
+    metadata_json TEXT,
+    ownership_json TEXT,
+    match_policy_id TEXT,
+    match_policy_name TEXT,
+    steps_json TEXT,
+    asset_id TEXT,
+    asset_status TEXT,
+    reference_id TEXT,
+    reference_status TEXT,
+    reference_content_type TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    step TEXT,
+    error_message TEXT,
+    response_json TEXT,
+    duplicate_json TEXT,
+    cms_json TEXT,
+    delivered_at DATETIME,
+    last_synced_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES content_id_delivery_products(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_tracks_product ON content_id_delivery_tracks(product_id, track_number);
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_tracks_isrc ON content_id_delivery_tracks(isrc);
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_tracks_asset ON content_id_delivery_tracks(asset_id);
+
+  CREATE TABLE IF NOT EXISTS content_id_delivery_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    track_id INTEGER,
+    action TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    message TEXT,
+    payload_json TEXT,
+    created_by INTEGER,
+    created_by_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES content_id_delivery_products(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_events_product ON content_id_delivery_events(product_id, id);
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_events_track ON content_id_delivery_events(track_id, id);
+
+  CREATE TABLE IF NOT EXISTS content_id_delivery_audio_uploads (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    file_mime TEXT,
+    file_sha256 TEXT,
+    created_by INTEGER,
+    created_by_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cid_delivery_audio_uploads_expires ON content_id_delivery_audio_uploads(expires_at);
+`);
+
+// v3: audio files are stored on the server (backend/data/delivery-media) and the reference is
+// delivered by a background job. Existing databases get the new columns through guarded ALTERs.
+const deliveryTrackColumns = db.prepare("PRAGMA table_info(content_id_delivery_tracks)").all();
+if (!deliveryTrackColumns.some((column) => column.name === "file_path")) {
+  db.exec("ALTER TABLE content_id_delivery_tracks ADD COLUMN file_path TEXT");
+}
+if (!deliveryTrackColumns.some((column) => column.name === "file_mime")) {
+  db.exec("ALTER TABLE content_id_delivery_tracks ADD COLUMN file_mime TEXT");
+}
+if (!deliveryTrackColumns.some((column) => column.name === "file_sha256")) {
+  db.exec("ALTER TABLE content_id_delivery_tracks ADD COLUMN file_sha256 TEXT");
+}
+if (!deliveryTrackColumns.some((column) => column.name === "file_uploaded_at")) {
+  db.exec("ALTER TABLE content_id_delivery_tracks ADD COLUMN file_uploaded_at DATETIME");
+}
+
+const deliveryProductColumns = db.prepare("PRAGMA table_info(content_id_delivery_products)").all();
+if (!deliveryProductColumns.some((column) => column.name === "include_reference")) {
+  db.exec("ALTER TABLE content_id_delivery_products ADD COLUMN include_reference INTEGER NOT NULL DEFAULT 1");
+}
+if (!deliveryProductColumns.some((column) => column.name === "job_started_at")) {
+  db.exec("ALTER TABLE content_id_delivery_products ADD COLUMN job_started_at DATETIME");
+}
+if (!deliveryProductColumns.some((column) => column.name === "job_finished_at")) {
+  db.exec("ALTER TABLE content_id_delivery_products ADD COLUMN job_finished_at DATETIME");
+}
+// v4: optional removal of the stored audio once its reference has been delivered.
+if (!deliveryProductColumns.some((column) => column.name === "delete_reference_after_delivery")) {
+  db.exec("ALTER TABLE content_id_delivery_products ADD COLUMN delete_reference_after_delivery INTEGER NOT NULL DEFAULT 0");
+}
+// v5: video delivery. A product carries the Content ID asset type of its items
+// (sound_recording | web | music_video); video items have a description and an official URL.
+if (!deliveryProductColumns.some((column) => column.name === "asset_type")) {
+  db.exec("ALTER TABLE content_id_delivery_products ADD COLUMN asset_type TEXT NOT NULL DEFAULT 'sound_recording'");
+}
+if (!deliveryTrackColumns.some((column) => column.name === "description")) {
+  db.exec("ALTER TABLE content_id_delivery_tracks ADD COLUMN description TEXT");
+}
+if (!deliveryTrackColumns.some((column) => column.name === "source_url")) {
+  db.exec("ALTER TABLE content_id_delivery_tracks ADD COLUMN source_url TEXT");
 }
 
 module.exports = db;

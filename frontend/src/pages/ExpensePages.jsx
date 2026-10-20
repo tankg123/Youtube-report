@@ -475,7 +475,7 @@ export function ExpenseTransactionsPage() {
           <td className="px-5 py-4">{row.category_name || "-"}</td>
           <td className="px-5 py-4 font-black text-rose-600">{money(row.amount, row.currency)}</td>
           <td className="px-5 py-4">{row.debt_status}</td>
-          <td className="px-5 py-4 text-xs text-slate-500">{t("created")}: {row.created_by_name || "-"}<br />{t("updated")}: {row.updated_by_name || "-"}</td>
+          <td className="px-5 py-4 text-xs text-slate-500">{t("created")}: {row.created_by_name || "-"}<br />{t("Updated")}: {row.updated_by_name || "-"}</td>
           <td className="px-5 py-4"><div className="flex gap-2"><Button variant="ghost" className="px-3" onClick={() => { setEditing(row); setOpen(true); }}><Edit3 size={15} /></Button><Button variant="danger" className="px-3" onClick={() => remove(row)}><Trash2 size={15} /></Button></div></td>
         </tr>
       )} />
@@ -514,7 +514,7 @@ export function ExpenseRevenuePage() {
           <td className="px-5 py-4">{row.account_name}</td>
           <td className="px-5 py-4 font-black text-emerald-700">{money(row.amount, row.currency)}</td>
           <td className="px-5 py-4 text-slate-500">{row.description || row.note || "-"}</td>
-          <td className="px-5 py-4 text-xs text-slate-500">{t("created")}: {row.created_by_name || "-"}<br />{t("updated")}: {row.updated_by_name || "-"}</td>
+          <td className="px-5 py-4 text-xs text-slate-500">{t("created")}: {row.created_by_name || "-"}<br />{t("Updated")}: {row.updated_by_name || "-"}</td>
           <td className="px-5 py-4"><div className="flex gap-2"><Button variant="ghost" className="px-3" onClick={() => { setEditing(row); setOpen(true); }}><Edit3 size={15} /></Button><Button variant="danger" className="px-3" onClick={() => remove(row)}><Trash2 size={15} /></Button></div></td>
         </tr>
       )} />

@@ -4,6 +4,9 @@ import { ArrowUpDown, Calendar, Check, ChevronDown, Copy, Download, Edit3, Loade
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
+import { useI18n } from "../context/I18nContext";
+import { formatDate, getLanguage, t, tk } from "../i18n/index.js";
+import { groupRevenueTaxState, revenueTaxColumnsLabel, revenueTaxFlags, revenueTaxKindsLabel, revenueTaxRatesLabel } from "../utils/revenueTax";
 
 const emptyGroup = {
   owner_type: "partner",
@@ -35,6 +38,7 @@ function money(value, currency = "USD") {
 }
 
 function SortButton({ label, active, direction, onClick, align = "left" }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
@@ -44,7 +48,7 @@ function SortButton({ label, active, direction, onClick, align = "left" }) {
         active ? "text-blue-700 bg-blue-50" : "text-slate-500",
         align === "right" ? "ml-auto justify-end" : ""
       ].join(" ")}
-      title={`Sort ${label} ${active && direction === "asc" ? "Z-A" : "A-Z"}`}
+      title={t("Sort {label} {order}", { label, order: active && direction === "asc" ? "Z-A" : "A-Z" })}
     >
       <span>{label}</span>
       <ArrowUpDown size={9} />
@@ -61,17 +65,18 @@ function converted(value, currency = "USD") {
 }
 
 function monthLabel(month) {
-  if (!month) return "Select month";
+  if (!month) return t("Select month");
   const [year, value] = month.split("-");
-  return new Date(Number(year), Number(value) - 1, 1).toLocaleDateString("en-US", {
+  return formatDate(new Date(Number(year), Number(value) - 1, 1), getLanguage(), {
     month: "long",
     year: "numeric"
   });
 }
 
-const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthNames = [tk("Jan"), tk("Feb"), tk("Mar"), tk("Apr"), tk("May"), tk("Jun"), tk("Jul"), tk("Aug"), tk("Sep"), tk("Oct"), tk("Nov"), tk("Dec")];
 
 function MonthPicker({ month, onChange }) {
+  const { t } = useI18n();
   const selected = month || currentMonth();
   const [year, setYear] = useState(Number(selected.slice(0, 4)));
 
@@ -96,14 +101,14 @@ function MonthPicker({ month, onChange }) {
                 active ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
               ].join(" ")}
             >
-              {name}
+              {t(name)}
             </button>
           );
         })}
       </div>
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-        <button type="button" onClick={() => onChange(currentMonth())} className="text-sm font-bold text-slate-500 hover:text-slate-900">Clear</button>
-        <button type="button" onClick={() => onChange(currentMonth())} className="text-sm font-bold text-blue-600">This month</button>
+        <button type="button" onClick={() => onChange(currentMonth())} className="text-sm font-bold text-slate-500 hover:text-slate-900">{t("Clear")}</button>
+        <button type="button" onClick={() => onChange(currentMonth())} className="text-sm font-bold text-blue-600">{t("This month")}</button>
       </div>
     </div>
   );
@@ -355,7 +360,9 @@ function makeXlsx({ sheetName, rows, merges, widths }) {
  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
   return makeZip([
+    // eslint-disable-next-line i18n/no-untranslated -- zip entry file name, not copy
     { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    // eslint-disable-next-line i18n/no-untranslated -- zip entry file name, not copy
     { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
     { name: "xl/workbook.xml", content: workbookXml },
     { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
@@ -382,7 +389,7 @@ function exportGroupExcel(group, company = fallbackCompany) {
   const currency = group.currency || "USD";
   const factor = Number(group.exchange_rate?.factor || 1);
   const titleMonth = monthLabel(group.month);
-  const paidLabel = `Paid ${currency}`;
+  const paidLabel = t("Paid {currency}", { currency });
   const channels = group.channels || [];
   const totalRevenueUsd = channels.reduce((sum, channel) => sum + Number(channel.revenue_usd ?? channel.revenue ?? 0), 0);
   const totalShareUsd = channels.reduce((sum, channel) => sum + Number(channel.share_amount || 0), 0);
@@ -396,25 +403,25 @@ function exportGroupExcel(group, company = fallbackCompany) {
   const emptyCells = (count, style = 0) => Array.from({ length: count }, () => blank(style));
 
   const rows = [
-    row([c("SOCIALIST REPUBLIC OF VIETNAM", 1), ...emptyCells(8)], 18),
-    row([c("Independence - Freedom - Happiness", 2), ...emptyCells(8)], 18),
+    row([c(t("SOCIALIST REPUBLIC OF VIETNAM"), 1), ...emptyCells(8)], 18),
+    row([c(t("Independence - Freedom - Happiness"), 2), ...emptyCells(8)], 18),
     row([c("----- o0o -----", 2), ...emptyCells(8)], 18),
-    row([c(`YOUTUBE RECONCILIATION MINUTES ${titleMonth}`, 3), ...emptyCells(8)], 24),
+    row([c(t("YOUTUBE RECONCILIATION MINUTES {month}", { month: titleMonth }), 3), ...emptyCells(8)], 24),
     row(emptyCells(9), 18),
-    row([c(`Party A: ${company.company_name || fallbackCompany.company_name}`, 4), ...emptyCells(8, 4)], 18),
-    row([c("Address", 5), c(company.address || "-", 6), ...emptyCells(7)], 18),
-    row([c("Phone / Email", 5), c(`${company.phone || "-"} / ${company.email || "-"}`, 6), ...emptyCells(7)], 18),
-    row([c("Representative", 5), c(company.representative_name || "-", 6), ...emptyCells(4), c(`Position: ${company.representative_position || "-"}`, 6), ...emptyCells(2)], 18),
-    row([c(`Party B: ${group.partner_name || "-"}`, 4), ...emptyCells(8, 4)], 18),
-    row([c("Address", 5), c(group.address || "-", 6), ...emptyCells(7)], 18),
-    row([c("Phone", 5), ...emptyCells(7), c(group.phone || "-", 7)], 18),
-    row([c("Email", 5), c(group.email || "-", 6), ...emptyCells(7)], 18),
-    row([c("Bank details", 5), c(`- | Account: ${group.account_number || "-"} | PingPongX: ${group.pingpongx || "-"} | Counter: ${group.counter_email || group.email || "-"}`, 6), ...emptyCells(7)], 18),
-    row([c("Exchange month description", 5), ...emptyCells(3), c(`1 USD = ${plainNumber(factor, currency === "VND" ? 0 : 2)} ${currency}`, 6), ...emptyCells(4)], 18),
-    row([c("No.", 8), c("Channel Name", 8), c("Channel ID", 8), c("Network", 8), c("Total Channel Revenue (USD)", 8), c("Share", 8), c("Share Amount USD", 8), c(paidLabel, 8), c("Notes", 8)], 20),
+    row([c(t("Party A: {company}", { company: company.company_name || fallbackCompany.company_name }), 4), ...emptyCells(8, 4)], 18),
+    row([c(t("Address"), 5), c(company.address || "-", 6), ...emptyCells(7)], 18),
+    row([c(t("Phone / Email"), 5), c(`${company.phone || "-"} / ${company.email || "-"}`, 6), ...emptyCells(7)], 18),
+    row([c(t("Representative"), 5), c(company.representative_name || "-", 6), ...emptyCells(4), c(t("Position: {position}", { position: company.representative_position || "-" }), 6), ...emptyCells(2)], 18),
+    row([c(t("Party B: {partner}", { partner: group.partner_name || "-" }), 4), ...emptyCells(8, 4)], 18),
+    row([c(t("Address"), 5), c(group.address || "-", 6), ...emptyCells(7)], 18),
+    row([c(t("Phone"), 5), ...emptyCells(7), c(group.phone || "-", 7)], 18),
+    row([c(t("Email"), 5), c(group.email || "-", 6), ...emptyCells(7)], 18),
+    row([c(t("Bank details"), 5), c(t("- | Account: {account} | PingPongX: {pingpongx} | Counter: {counter}", { account: group.account_number || "-", pingpongx: group.pingpongx || "-", counter: group.counter_email || group.email || "-" }), 6), ...emptyCells(7)], 18),
+    row([c(t("Exchange month description"), 5), ...emptyCells(3), c(`1 USD = ${plainNumber(factor, currency === "VND" ? 0 : 2)} ${currency}`, 6), ...emptyCells(4)], 18),
+    row([c(t("No."), 8), c(t("Channel Name"), 8), c(t("Channel ID"), 8), c(t("Network"), 8), c(t("Total Channel Revenue (USD)"), 8), c(t("Share"), 8), c(t("Share Amount USD"), 8), c(paidLabel, 8), c(t("Notes"), 8)], 20),
     ...channels.map((channel, index) => row([
       c(index + 1, 9, "n"),
-      c(channel.title || "Channel error / die", 6),
+      c(channel.title || t("Channel error / die"), 6),
       c(channel.channel_id || "", 6),
       c(channel.network_name || group.network_name || "-", 6),
       c(channel.revenue_usd ?? channel.revenue ?? 0, 10, "n"),
@@ -423,9 +430,9 @@ function exportGroupExcel(group, company = fallbackCompany) {
       c(channel.paid ?? channel.share_amount_converted ?? channel.share_amount ?? 0, paidStyle, "n"),
       blank(6)
     ], 19)),
-    row([c("Total", 12), ...emptyCells(3, 12), c(totalRevenueUsd, 13, "n"), blank(12), c(totalShareUsd, 13, "n"), c(totalPaid, totalPaidStyle, "n"), blank(12)], 19),
-    row([c(`Fee (${plainNumber(group.summary?.fee_rate ?? group.fee_rate ?? 0, 2)}%)`, 12), ...emptyCells(6, 12), c(group.summary?.fee_converted ?? 0, totalPaidStyle, "n"), blank(12)], 19),
-    row([c(`Total Payable ${currency}`, 12), ...emptyCells(6, 12), c(group.summary?.payable_converted ?? group.summary?.paid_converted ?? totalPaid, totalPaidStyle, "n"), blank(12)], 19)
+    row([c(t("Total"), 12), ...emptyCells(3, 12), c(totalRevenueUsd, 13, "n"), blank(12), c(totalShareUsd, 13, "n"), c(totalPaid, totalPaidStyle, "n"), blank(12)], 19),
+    row([c(t("Fee ({rate}%)", { rate: plainNumber(group.summary?.fee_rate ?? group.fee_rate ?? 0, 2) }), 12), ...emptyCells(6, 12), c(group.summary?.fee_converted ?? 0, totalPaidStyle, "n"), blank(12)], 19),
+    row([c(t("Total Payable {currency}", { currency }), 12), ...emptyCells(6, 12), c(group.summary?.payable_converted ?? group.summary?.paid_converted ?? totalPaid, totalPaidStyle, "n"), blank(12)], 19)
   ];
 
   const blob = makeXlsx({
@@ -469,7 +476,7 @@ function exportGroupPdf(group, company = fallbackCompany) {
     <html>
       <head>
         <meta charset="UTF-8" />
-        <title>${escapeHtml(group.group_name)} invoice</title>
+        <title>${t("{group} invoice", { group: escapeHtml(group.group_name) })}</title>
         <style>
           @page { size: A4; margin: 0; }
           * { box-sizing: border-box; }
@@ -510,61 +517,61 @@ function exportGroupPdf(group, company = fallbackCompany) {
         </style>
       </head>
       <body>
-        <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+        <button class="print-btn" onclick="window.print()">${t("Print / Save PDF")}</button>
         <section class="sheet">
           <aside class="side">
-            <div class="logo">YOUR<br>LOGO</div>
+            <div class="logo">${t("YOUR<br>LOGO")}</div>
             <div>
-              <b>Invoice# ${escapeHtml(invoiceNumber)}</b><br>
-              <b>Invoice Date: ${escapeHtml(new Date().toLocaleDateString("en-GB"))}</b><br>
-              <b>Account: ${escapeHtml(group.account_number || "-")}</b>
+              <b>${t("Invoice# {number}", { number: escapeHtml(invoiceNumber) })}</b><br>
+              <b>${t("Invoice Date: {date}", { date: escapeHtml(new Date().toLocaleDateString("en-GB")) })}</b><br>
+              <b>${t("Account: {account}", { account: escapeHtml(group.account_number || "-") })}</b>
             </div>
-            <div class="invoice-vertical">INVOICE</div>
+            <div class="invoice-vertical">${t("INVOICE")}</div>
             <div class="side-block">
-              <b>Phone</b>${escapeHtml(company.phone || "-")}
-              <b>E-mail</b>${escapeHtml(company.email || "-")}
-              <b>Address</b>${escapeHtml(company.address || "-")}
+              <b>${t("Phone")}</b>${escapeHtml(company.phone || "-")}
+              <b>${t("E-mail")}</b>${escapeHtml(company.email || "-")}
+              <b>${t("Address")}</b>${escapeHtml(company.address || "-")}
             </div>
             <div class="terms">
-              <b>TERM & CONDITIONS</b>
-              Revenue reconciliation for YouTube channels, subject to monthly exchange rate and agreed partner share.
+              <b>${t("TERM & CONDITIONS")}</b>
+              ${t("Revenue reconciliation for YouTube channels, subject to monthly exchange rate and agreed partner share.")}
             </div>
           </aside>
           <main class="main">
             <div class="top">
               <div>
-                <div class="party-label">Invoice From,</div>
+                <div class="party-label">${t("Invoice From,")}</div>
                 <h2>${escapeHtml(company.company_name || fallbackCompany.company_name)}</h2>
                 <div class="info">
-                  <b>Phone</b>${escapeHtml(company.phone || "-")}
-                  <b>E-mail</b>${escapeHtml(company.email || "-")}
-                  <b>Address</b>${escapeHtml(company.address || "-")}
+                  <b>${t("Phone")}</b>${escapeHtml(company.phone || "-")}
+                  <b>${t("E-mail")}</b>${escapeHtml(company.email || "-")}
+                  <b>${t("Address")}</b>${escapeHtml(company.address || "-")}
                 </div>
               </div>
               <div>
-                <div class="party-label">Invoice To,</div>
+                <div class="party-label">${t("Invoice To,")}</div>
                 <h2>${escapeHtml(group.partner_name || "-")}</h2>
                 <div class="info">
-                  <b>Phone</b>${escapeHtml(group.phone || "-")}
-                  <b>E-mail</b>${escapeHtml(group.email || "-")}
-                  <b>Address</b>${escapeHtml(group.address || "-")}
+                  <b>${t("Phone")}</b>${escapeHtml(group.phone || "-")}
+                  <b>${t("E-mail")}</b>${escapeHtml(group.email || "-")}
+                  <b>${t("Address")}</b>${escapeHtml(group.address || "-")}
                 </div>
               </div>
             </div>
 
             <table>
               <thead>
-                <tr><th>Item Descriptions</th><th>Qty</th><th>Price</th><th>Total</th></tr>
+                <tr><th>${t("Item Descriptions")}</th><th>${t("Qty")}</th><th>${t("Price")}</th><th>${t("Total")}</th></tr>
               </thead>
-              <tbody>${rows || "<tr><td colspan='4'>No channels.</td></tr>"}</tbody>
+              <tbody>${rows || `<tr><td colspan='4'>${t("No channels.")}</td></tr>`}</tbody>
             </table>
 
             <div class="summary">
               <div class="totals">
-                <div><span>SUB TOTAL</span><span>${converted(paid, currency)}</span></div>
-                <div><span>FEE (${plainNumber(group.summary?.fee_rate ?? group.fee_rate ?? 0, 2)}%)</span><span>${converted(fee, currency)}</span></div>
-                <div><span>DISCOUNT</span><span>${converted(0, currency)}</span></div>
-                <div><span>GRAND TOTAL</span><span>${converted(payable, currency)}</span></div>
+                <div><span>${t("SUB TOTAL")}</span><span>${converted(paid, currency)}</span></div>
+                <div><span>${t("FEE ({rate}%)", { rate: plainNumber(group.summary?.fee_rate ?? group.fee_rate ?? 0, 2) })}</span><span>${converted(fee, currency)}</span></div>
+                <div><span>${t("DISCOUNT")}</span><span>${converted(0, currency)}</span></div>
+                <div><span>${t("GRAND TOTAL")}</span><span>${converted(payable, currency)}</span></div>
               </div>
               <div class="grand">${converted(payable, currency)}</div>
             </div>
@@ -572,19 +579,19 @@ function exportGroupPdf(group, company = fallbackCompany) {
             <div class="divider"></div>
             <div class="payments">
               <div>
-                <h3>PAYMENT INFO</h3>
-                <b>Account Us</b>${escapeHtml(company.account_number || "-")}
-                <b>A/C Name</b>${escapeHtml(company.company_name || "-")}
-                <b>Bank Details</b>${escapeHtml(company.bank_name || "-")}
+                <h3>${t("PAYMENT INFO")}</h3>
+                <b>${t("Account Us")}</b>${escapeHtml(company.account_number || "-")}
+                <b>${t("A/C Name")}</b>${escapeHtml(company.company_name || "-")}
+                <b>${t("Bank Details")}</b>${escapeHtml(company.bank_name || "-")}
               </div>
               <div>
-                <h3>PAYMENT INFO</h3>
-                <b>Account Us</b>${escapeHtml(group.account_number || "-")}
-                <b>A/C Name</b>${escapeHtml(group.partner_name || "-")}
-                <b>Bank Details</b>${escapeHtml(group.bank_name || group.pingpongx || "-")}
+                <h3>${t("PAYMENT INFO")}</h3>
+                <b>${t("Account Us")}</b>${escapeHtml(group.account_number || "-")}
+                <b>${t("A/C Name")}</b>${escapeHtml(group.partner_name || "-")}
+                <b>${t("Bank Details")}</b>${escapeHtml(group.bank_name || group.pingpongx || "-")}
               </div>
             </div>
-            <div class="thanks">THANKS YOUR BUSINESS</div>
+            <div class="thanks">${t("THANKS YOUR BUSINESS")}</div>
           </main>
         </section>
       </body>
@@ -598,7 +605,8 @@ function exportGroupPdf(group, company = fallbackCompany) {
   win.document.close();
 }
 
-function GroupForm({ partners, collaborators, isEditing, value, onChange, revenueTaxEnabled = false }) {
+function GroupForm({ partners, collaborators, isEditing, value, onChange, revenueTax = { us: false, br: false, any: false } }) {
+  const { t } = useI18n();
   const [partnerSearch, setPartnerSearch] = useState("");
   const [partnerSelectOpen, setPartnerSelectOpen] = useState(false);
   const ownerType = value.owner_type === "collaborator" ? "collaborator" : "partner";
@@ -634,25 +642,25 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
   return (
     <div className="space-y-5">
       <div>
-        <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Group for</span>
+        <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Group for")}</span>
         <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
           <button
             type="button"
             disabled={isEditing}
             onClick={() => onChange({ ...value, owner_type: "partner" })}
             className={`rounded-xl px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed ${ownerType === "partner" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800 disabled:opacity-40"}`}
-            title={isEditing ? "Không thể đổi loại group sau khi tạo" : undefined}
+            title={isEditing ? t("The group type cannot be changed after creation") : undefined}
           >
-            Partner
+            {t("Partner")}
           </button>
           <button
             type="button"
             disabled={isEditing}
             onClick={() => onChange({ ...value, owner_type: "collaborator" })}
             className={`rounded-xl px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed ${ownerType === "collaborator" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800 disabled:opacity-40"}`}
-            title={isEditing ? "Không thể đổi loại group sau khi tạo" : undefined}
+            title={isEditing ? t("The group type cannot be changed after creation") : undefined}
           >
-            Collaborator
+            {t("Collaborator")}
           </button>
         </div>
       </div>
@@ -660,16 +668,16 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
       <div className="grid md:grid-cols-2 gap-4">
         {ownerType === "collaborator" ? (
           <label>
-            <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Collaborator</span>
+            <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Collaborator")}</span>
             <select
               value={value.collaborator_id}
               onChange={(e) => onChange({ ...value, collaborator_id: e.target.value })}
               className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3"
             >
-              <option value="">Select collaborator</option>
+              <option value="">{t("Select collaborator")}</option>
               {sortedCollaborators.map((collaborator) => (
                 <option key={collaborator.id} value={collaborator.id}>
-                  {(collaborator.display_name || collaborator.name) + ` (${collaborator.channel_count || 0} ch)`}
+                  {t("{name} ({count} ch)", { name: collaborator.display_name || collaborator.name, count: collaborator.channel_count || 0 })}
                 </option>
               ))}
             </select>
@@ -681,13 +689,13 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
             if (!event.currentTarget.contains(event.relatedTarget)) setPartnerSelectOpen(false);
           }}
         >
-          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Partner</span>
+          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Partner")}</span>
           <button
             type="button"
             onClick={() => setPartnerSelectOpen((current) => !current)}
             className="flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-3 text-left text-slate-900"
           >
-            <span className={selectedPartner ? "truncate" : "truncate text-slate-500"}>{selectedPartner ? selectedPartner.display_name || selectedPartner.partner_name : "Select partner"}</span>
+            <span className={selectedPartner ? "truncate" : "truncate text-slate-500"}>{selectedPartner ? selectedPartner.display_name || selectedPartner.partner_name : t("Select partner")}</span>
             <ChevronDown size={18} className="shrink-0 text-slate-500" />
           </button>
           {partnerSelectOpen && (
@@ -699,7 +707,7 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
                   type="search"
                   value={partnerSearch}
                   onChange={(event) => setPartnerSearch(event.target.value)}
-                  placeholder="Search partner..."
+                  placeholder={t("Search partner...")}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
                 />
               </div>
@@ -714,7 +722,7 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
                   }}
                   className="block w-full px-4 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
                 >
-                  Select partner
+                  {t("Select partner")}
                 </button>
                 {filteredPartners.map((partner) => (
                   <button
@@ -731,12 +739,12 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
                     {partner.display_name || partner.partner_name}
                   </button>
                 ))}
-                {!filteredPartners.length && <div className="px-4 py-3 text-sm text-slate-500">No partner found.</div>}
+                {!filteredPartners.length && <div className="px-4 py-3 text-sm text-slate-500">{t("No partner found.")}</div>}
               </div>
             </div>
           )}
           <select value={value.partner_id} onChange={(e) => onChange({ ...value, partner_id: e.target.value })} className="hidden">
-            <option value="">Chọn partner</option>
+            <option value="">{t("Select partner")}</option>
             {filteredPartners.map((partner) => (
               <option key={partner.id} value={partner.id}>{partner.display_name || partner.partner_name}</option>
             ))}
@@ -744,11 +752,11 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
         </div>
         )}
         <label>
-          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Tên group</span>
-          <input value={value.group_name} onChange={(e) => onChange({ ...value, group_name: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder="Tên hiển thị group" />
+          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Group name")}</span>
+          <input value={value.group_name} onChange={(e) => onChange({ ...value, group_name: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder={t("Group display name")} />
         </label>
         <label>
-          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Type rate</span>
+          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Type rate")}</span>
           <select value={value.currency} onChange={(e) => onChange({ ...value, currency: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3 bg-white">
             <option value="USD">USD</option>
             <option value="VND">VND</option>
@@ -756,14 +764,14 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
           </select>
         </label>
         <label>
-          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Fee (%)</span>
+          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Fee (%)")}</span>
           <input type="number" min="0" max="100" step="0.01" value={value.fee_rate ?? 0} onChange={(e) => onChange({ ...value, fee_rate: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder="0" />
         </label>
         <label>
-          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Mô tả</span>
-          <input value={value.description} onChange={(e) => onChange({ ...value, description: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder="Mô tả ngắn về group này..." />
+          <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Description")}</span>
+          <input value={value.description} onChange={(e) => onChange({ ...value, description: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3" placeholder={t("Short description of this group...")} />
         </label>
-        {revenueTaxEnabled && (
+        {revenueTax.any && (
           <label className="flex min-h-[62px] cursor-pointer items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3">
             <input
               type="checkbox"
@@ -772,8 +780,8 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
               className="h-5 w-5 rounded border-slate-300 text-emerald-600"
             />
             <span>
-              <span className="block text-sm font-black text-slate-900">Tính thuế US / BR</span>
-              <span className="block text-xs text-slate-500">Trừ US 30% và Brazil 14% trước khi chia sharing.</span>
+              <span className="block text-sm font-black text-slate-900">{t("Apply {taxes} tax", { taxes: revenueTaxKindsLabel(revenueTax) })}</span>
+              <span className="block text-xs text-slate-500">{t("Withhold {rates} before the revenue share is calculated.", { rates: revenueTaxRatesLabel(revenueTax) })}</span>
             </span>
           </label>
         )}
@@ -788,8 +796,8 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
             className="mt-1 h-4 w-4 rounded border-slate-300"
           />
           <span>
-            <span className="block font-black text-slate-900">Tự động thêm toàn bộ kênh của collaborator</span>
-            <span className="mt-1 block text-sm text-slate-600">Lấy tất cả kênh gán cho collaborator này trong Channel Management, kèm rate sharing đã khai cho từng kênh.</span>
+            <span className="block font-black text-slate-900">{t("Automatically add all channels of the collaborator")}</span>
+            <span className="mt-1 block text-sm text-slate-600">{t("Pull every channel assigned to this collaborator in Channel Management, with the sharing rate declared for each channel.")}</span>
           </span>
         </label>
       )}
@@ -797,24 +805,24 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
       <div className="border border-slate-200 rounded-3xl overflow-hidden">
         <div className="px-4 py-3 bg-slate-50 flex items-center justify-between">
           <div>
-            <h3 className="font-black text-slate-900">Revenue tiers</h3>
-            <p className="text-xs text-slate-500">Có thể bỏ trống nếu group không dùng tier.</p>
+            <h3 className="font-black text-slate-900">{t("Revenue tiers")}</h3>
+            <p className="text-xs text-slate-500">{t("Leave empty if the group does not use tiers.")}</p>
           </div>
           <button type="button" onClick={addTier} className="px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-sm flex items-center gap-2">
             <Plus size={15} />
-            Thêm tier
+            {t("Add tier")}
           </button>
         </div>
         <div className="p-4 space-y-3">
           {value.tiers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-              Group này chưa dùng tier. Bấm Thêm tier khi cần.
+              {t("This group does not use tiers yet. Click Add tier when needed.")}
             </div>
           ) : value.tiers.map((tier, index) => (
             <div key={index} className="grid grid-cols-[26px_1fr_1fr_1fr_34px] gap-3 items-end">
               <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 text-xs font-black flex items-center justify-center">{index + 1}</span>
               <label>
-                <span className="text-xs font-black uppercase text-slate-400">Min Revenue USD</span>
+                <span className="text-xs font-black uppercase text-slate-400">{t("Min Revenue USD")}</span>
                 <input type="number" value={tier.min} onChange={(e) => {
                   const tiers = [...value.tiers];
                   tiers[index] = { ...tier, min: e.target.value };
@@ -822,7 +830,7 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
                 }} className="w-full rounded-xl border border-slate-200 px-3 py-2" />
               </label>
               <label>
-                <span className="text-xs font-black uppercase text-slate-400">Max Revenue USD</span>
+                <span className="text-xs font-black uppercase text-slate-400">{t("Max Revenue USD")}</span>
                 <input type="number" value={tier.max} onChange={(e) => {
                   const tiers = [...value.tiers];
                   tiers[index] = { ...tier, max: e.target.value };
@@ -830,7 +838,7 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
                 }} className="w-full rounded-xl border border-slate-200 px-3 py-2" />
               </label>
               <label>
-                <span className="text-xs font-black uppercase text-slate-400">Share Rate</span>
+                <span className="text-xs font-black uppercase text-slate-400">{t("Share Rate")}</span>
                 <input type="number" value={tier.rate} onChange={(e) => {
                   const tiers = [...value.tiers];
                   tiers[index] = { ...tier, rate: e.target.value };
@@ -851,6 +859,7 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
 export default function GroupChannelPage() {
   const { canViewReports } = useAuth();
   const { settings } = useSystemSettings();
+  const { t, tk, tm } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState(currentMonth());
   const [partners, setPartners] = useState([]);
@@ -883,12 +892,13 @@ export default function GroupChannelPage() {
   const [channelSearch, setChannelSearch] = useState("");
   const queryGroupId = searchParams.get("group_id");
   const queryMonth = searchParams.get("month");
-  const revenueTaxEnabled = String(settings?.revenue_tax_us_br_enabled || "0") === "1";
-  // The loaded group carries the server's effective flags; the cached setting only fills in when none is loaded.
-  const detailRevenueTaxEnabled = detail?.summary?.revenue_tax_enabled !== undefined
-    ? Number(detail.summary.revenue_tax_enabled) === 1
-    : revenueTaxEnabled;
-  const detailUsesRevenueTax = Number(detail?.summary?.apply_revenue_tax ?? 0) === 1;
+  const revenueTax = revenueTaxFlags(settings);
+  // The loaded group carries the server's effective flags per tax kind; the cached settings only fill in when no
+  // group is loaded.
+  const detailTax = groupRevenueTaxState(detail?.summary, revenueTax);
+  const detailRevenueTaxEnabled = detailTax.enabled.any;
+  const detailUsesRevenueTax = detailTax.applies.any;
+  const detailTaxColumns = (detailTax.applies.us ? 1 : 0) + (detailTax.applies.br ? 1 : 0);
 
   function toggleChannelSort(key) {
     setChannelSort((current) => ({
@@ -976,7 +986,7 @@ export default function GroupChannelPage() {
         setSelectedId(nextGroups[0].id);
       }
     } catch (error) {
-      setMessage(error.response?.data?.message || "Lỗi tải group");
+      setMessage(error.response?.data?.message || tk("Could not load groups"));
     } finally {
       setLoading(false);
     }
@@ -1019,10 +1029,10 @@ export default function GroupChannelPage() {
   async function copyChannelId(channelId) {
     try {
       await navigator.clipboard.writeText(channelId);
-      setToast(`Đã copy channel ${channelId}`);
+      setToast(t("Copied channel {channelId}", { channelId }));
       setTimeout(() => setToast(""), 5000);
     } catch {
-      setToast("Không thể copy Channel ID");
+      setToast(tk("Could not copy the Channel ID"));
       setTimeout(() => setToast(""), 5000);
     }
   }
@@ -1050,30 +1060,30 @@ export default function GroupChannelPage() {
 
       if (editing) {
         const res = await api.put(`/reports/groups/${editing.id}`, payload);
-        setMessage(res.data?.message || "Đã cập nhật group");
+        setMessage(res.data?.message || tk("Group updated"));
       } else {
         const res = await api.post("/reports/groups", payload);
         nextSelectedId = res.data.data?.id || selectedId;
         setSelectedId(nextSelectedId);
-        setMessage(res.data?.message || "Đã tạo group");
+        setMessage(res.data?.message || tk("Group created"));
       }
 
       setGroupModal(false);
       await fetchAll();
       await fetchDetail(nextSelectedId);
     } catch (error) {
-      setMessage(error.response?.data?.message || error.response?.data?.error || "Lỗi lưu group");
+      setMessage(error.response?.data?.message || error.response?.data?.error || tk("Could not save the group"));
     } finally {
       setSaving(false);
     }
   }
 
   async function deleteGroup() {
-    if (!detail || !window.confirm("Xóa group này?")) return;
+    if (!detail || !window.confirm(t("Delete this group?"))) return;
     await api.delete(`/reports/groups/${detail.id}`);
     setSelectedId(null);
     setDetail(null);
-    setMessage("Đã xóa group");
+    setMessage(tk("Group deleted"));
     await fetchAll();
   }
 
@@ -1087,14 +1097,14 @@ export default function GroupChannelPage() {
         revenue_share: revenueShare,
         month
       });
-      setMessage(res.data?.message || "Added channels to group");
+      setMessage(res.data?.message || tk("Added channels to group"));
       setAddModal(false);
       setChannelInputs("");
       setRevenueShare("");
       await fetchDetail();
       await fetchAll();
     } catch (error) {
-      setMessage(error.response?.data?.message || "Lỗi thêm channel");
+      setMessage(error.response?.data?.message || tk("Could not add channels"));
     } finally {
       setSaving(false);
     }
@@ -1102,7 +1112,7 @@ export default function GroupChannelPage() {
 
   async function loadPartnerManagedChannels() {
     if (!detail?.partner_id) {
-      setMessage("This group does not have a partner to load channels from.");
+      setMessage(tk("This group does not have a partner to load channels from."));
       return;
     }
 
@@ -1114,7 +1124,7 @@ export default function GroupChannelPage() {
         .filter(Boolean);
 
       if (!partnerChannelIds.length) {
-        setMessage("No Channel Management channels found for this partner.");
+        setMessage(tk("No Channel Management channels found for this partner."));
         return;
       }
 
@@ -1127,10 +1137,12 @@ export default function GroupChannelPage() {
       const nextLines = [...existingLines, ...newLines];
 
       setChannelInputs(nextLines.join("\n"));
-      setToast(`Loaded ${newLines.length} channel IDs from ${detail.partner_name || "partner"}`);
+      setToast(detail.partner_name
+        ? t("Loaded {count} channel IDs from {partner}", { count: newLines.length, partner: detail.partner_name })
+        : t("Loaded {count} channel IDs from partner", { count: newLines.length }));
       setTimeout(() => setToast(""), 5000);
     } catch (error) {
-      setMessage(error.response?.data?.message || "Could not load partner channels from Channel Management");
+      setMessage(error.response?.data?.message || tk("Could not load partner channels from Channel Management"));
     } finally {
       setLoadingPartnerChannels(false);
     }
@@ -1148,11 +1160,11 @@ export default function GroupChannelPage() {
     try {
       setSyncing(true);
       const res = await api.post(`/reports/groups/${detail.id}/sync-collaborator-channels`, { month });
-      setMessage(res.data?.message || "Đã đồng bộ channel của collaborator");
+      setMessage(res.data?.message || tk("Collaborator channels synced"));
       await fetchDetail();
       await fetchAll();
     } catch (error) {
-      setMessage(error.response?.data?.message || "Lỗi đồng bộ channel của collaborator");
+      setMessage(error.response?.data?.message || tk("Could not sync the collaborator channels"));
     } finally {
       setSyncing(false);
     }
@@ -1223,7 +1235,7 @@ export default function GroupChannelPage() {
       if (contentType.includes("application/json")) {
         const text = await res.data.text();
         const payload = JSON.parse(text);
-        throw new Error(payload.message || payload.error || `Could not export ${format.toUpperCase()}`);
+        throw new Error(payload.message || payload.error || t("Could not export {format}", { format: format.toUpperCase() }));
       }
 
       const extension = format === "pdf" ? "pdf" : "xlsx";
@@ -1238,12 +1250,12 @@ export default function GroupChannelPage() {
         const text = await error.response.data.text();
         try {
           const payload = JSON.parse(text);
-          setMessage(payload.message || payload.error || `Could not export ${format.toUpperCase()}`);
+          setMessage(payload.message || payload.error || t("Could not export {format}", { format: format.toUpperCase() }));
         } catch {
-          setMessage(text || `Could not export ${format.toUpperCase()}`);
+          setMessage(text || t("Could not export {format}", { format: format.toUpperCase() }));
         }
       } else {
-        setMessage(error.message || error.response?.data?.message || `Could not export ${format.toUpperCase()}`);
+        setMessage(error.message || error.response?.data?.message || t("Could not export {format}", { format: format.toUpperCase() }));
       }
     } finally {
       setSaving(false);
@@ -1271,7 +1283,7 @@ export default function GroupChannelPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchDetail(selectedId).catch((error) => setMessage(error.response?.data?.message || "Lỗi tải chi tiết group"));
+      fetchDetail(selectedId).catch((error) => setMessage(error.response?.data?.message || tk("Could not load the group details")));
     }, 0);
 
     return () => clearTimeout(timer);
@@ -1282,14 +1294,14 @@ export default function GroupChannelPage() {
     <div className="p-5 lg:p-8">
       <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 bg-white border border-slate-200 rounded-3xl px-5 py-4 shadow-sm mb-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Group Channels</h1>
-          <p className="text-slate-500 text-sm mt-1">Tạo group, chọn partner, cấu hình tier và tính revenue share theo tháng.</p>
+          <h1 className="text-2xl font-black text-slate-900">{t("Group Channels")}</h1>
+          <p className="text-slate-500 text-sm mt-1">{t("Create groups, pick a partner, configure tiers and calculate the monthly revenue share.")}</p>
         </div>
         <div className="flex flex-wrap gap-3">
           {canViewReports && (
             <button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2">
               <Plus size={18} />
-              Tạo group
+              {t("Create group")}
             </button>
           )}
           <div className="relative">
@@ -1317,21 +1329,21 @@ export default function GroupChannelPage() {
         </div>
       </div>
 
-      {message && <div className="mb-5 bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-5 py-4 font-medium">{message}</div>}
+      {message && <div className="mb-5 bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-5 py-4 font-medium">{tm(message)}</div>}
 
       <div className={groupListCollapsed ? "grid gap-5" : "grid xl:grid-cols-[360px_1fr] gap-5"}>
         {!groupListCollapsed && (
         <aside className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
             <Users size={18} />
-            <h2 className="font-black">Groups</h2>
+            <h2 className="font-black">{t("Groups")}</h2>
             <div className="relative ml-auto min-w-0 flex-1">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="search"
                 value={groupSearch}
                 onChange={(event) => setGroupSearch(event.target.value)}
-                placeholder="Search group..."
+                placeholder={t("Search group...")}
                 className="h-8 w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-2 text-xs font-semibold outline-none focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
               />
             </div>
@@ -1339,7 +1351,7 @@ export default function GroupChannelPage() {
               type="button"
               onClick={() => setGroupSortDirection((direction) => (direction === "asc" ? "desc" : "asc"))}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-blue-50 hover:text-blue-700"
-              title={`Sort groups ${groupSortDirection === "asc" ? "Z-A" : "A-Z"}`}
+              title={t("Sort groups {order}", { order: groupSortDirection === "asc" ? "Z-A" : "A-Z" })}
             >
               <ArrowUpDown size={13} />
             </button>
@@ -1347,7 +1359,7 @@ export default function GroupChannelPage() {
               type="button"
               onClick={() => setGroupListCollapsed(true)}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-blue-600"
-              title="Hide group list"
+              title={t("Hide group list")}
             >
               <MoreHorizontal size={17} />
             </button>
@@ -1355,9 +1367,9 @@ export default function GroupChannelPage() {
           {loading ? (
             <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-blue-600" /></div>
           ) : groups.length === 0 ? (
-            <div className="p-6 text-slate-500">Chưa có group nào.</div>
+            <div className="p-6 text-slate-500">{t("No groups yet.")}</div>
           ) : filteredSortedGroups.length === 0 ? (
-            <div className="p-6 text-slate-500">No groups match this search.</div>
+            <div className="p-6 text-slate-500">{t("No groups match this search.")}</div>
           ) : (
             <div className="p-3 space-y-2">
               {filteredSortedGroups.map((group) => (
@@ -1374,7 +1386,7 @@ export default function GroupChannelPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-black text-slate-900 truncate">{group.group_name}</span>
-                    <span className="text-xs bg-white border border-slate-200 rounded-full px-2 py-1">{group.channel_count} ch</span>
+                    <span className="text-xs bg-white border border-slate-200 rounded-full px-2 py-1">{t("{count} ch", { count: group.channel_count })}</span>
                   </div>
                   <p className="text-sm text-slate-500 mt-1 flex items-center gap-2 min-w-0">
                     {group.collaborator_id ? <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-violet-700">CTV</span> : null}
@@ -1396,11 +1408,11 @@ export default function GroupChannelPage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50"
             >
               <MoreHorizontal size={17} />
-              Show groups
+              {t("Show groups")}
             </button>
           )}
           {!detail ? (
-            <div className="bg-white border border-dashed border-slate-300 rounded-3xl p-12 text-center text-slate-500">Chọn hoặc tạo group để xem chi tiết.</div>
+            <div className="bg-white border border-dashed border-slate-300 rounded-3xl p-12 text-center text-slate-500">{t("Select or create a group to see its details.")}</div>
           ) : (
             <>
               <section className="bg-white border border-slate-200 rounded-3xl shadow-sm p-5">
@@ -1408,93 +1420,95 @@ export default function GroupChannelPage() {
                   <div>
                     <h2 className="text-2xl font-black text-slate-900">{detail.group_name}</h2>
                     <p className="text-slate-500 flex items-center gap-2">
-                      {detail.collaborator_id ? <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-black uppercase text-violet-700">Collaborator</span> : null}
+                      {detail.collaborator_id ? <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-black uppercase text-violet-700">{t("Collaborator")}</span> : null}
                       <span>{detail.partner_name}</span>
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {canViewReports && <button onClick={() => setAddModal(true)} className="bg-emerald-600 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Plus size={17} /> Add channel</button>}
+                    {canViewReports && <button onClick={() => setAddModal(true)} className="bg-emerald-600 text-white rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Plus size={17} /> {t("Add channel")}</button>}
                     {canViewReports && detail.collaborator_id && (
                       <button
                         onClick={syncCollaboratorChannels}
                         disabled={syncing || saving}
                         className="bg-violet-50 border border-violet-200 text-violet-700 rounded-2xl px-4 py-3 font-bold flex items-center gap-2 disabled:opacity-60"
-                        title="Thêm kênh mới và cập nhật rate theo Channel Management của collaborator này"
+                        title={t("Add new channels and update the rates from this collaborator's Channel Management")}
                       >
                         {syncing ? <Loader2 className="animate-spin" size={17} /> : <RefreshCw size={17} />}
-                        Sync CM channels
+                        {t("Sync CM channels")}
                       </button>
                     )}
-                    <button onClick={() => fetchDetail()} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><RefreshCw size={17} /> Refresh</button>
-                    <button onClick={() => setExportModalOpen(true)} className="bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Download size={17} /> Export</button>
-                    {canViewReports && <button onClick={openEdit} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Edit3 size={17} /> Edit</button>}
-                    {canViewReports && <button onClick={deleteGroup} className="bg-red-50 border border-red-100 text-red-600 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Trash2 size={17} /> Xóa group</button>}
+                    <button onClick={() => fetchDetail()} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><RefreshCw size={17} /> {t("Refresh")}</button>
+                    <button onClick={() => setExportModalOpen(true)} className="bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Download size={17} /> {t("Export")}</button>
+                    {canViewReports && <button onClick={openEdit} className="bg-white border border-slate-200 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Edit3 size={17} /> {t("Edit")}</button>}
+                    {canViewReports && <button onClick={deleteGroup} className="bg-red-50 border border-red-100 text-red-600 rounded-2xl px-4 py-3 font-bold flex items-center gap-2"><Trash2 size={17} /> {t("Delete group")}</button>}
                   </div>
                 </div>
 
                 <div className="grid lg:grid-cols-[2fr_1fr] gap-5">
                   <div className="grid sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                    <p className="text-slate-500"><b className="text-slate-800">Email:</b> {detail.email || "-"}</p>
-                    <p className="text-slate-500"><b className="text-slate-800">Phone:</b> {detail.phone || "-"}</p>
-                    <p className="text-slate-500"><b className="text-slate-800">Address:</b> {detail.address || "-"}</p>
-                    <p className="text-slate-500"><b className="text-slate-800">Bank:</b> {detail.bank_name || "-"}</p>
-                    <p className="text-slate-500"><b className="text-slate-800">Account:</b> {detail.account_number || "-"}</p>
-                    <p className="text-slate-500"><b className="text-slate-800">Currency:</b> {detail.currency}</p>
-                    <p className="text-slate-500"><b className="text-slate-800">Fee:</b> {detail.fee_rate || 0}%</p>
+                    <p className="text-slate-500"><b className="text-slate-800">{t("Email:")}</b> {detail.email || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">{t("Phone:")}</b> {detail.phone || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">{t("Address:")}</b> {detail.address || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">{t("Bank:")}</b> {detail.bank_name || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">{t("Account:")}</b> {detail.account_number || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">{t("Currency:")}</b> {detail.currency}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">{t("Fee:")}</b> {detail.fee_rate || 0}%</p>
                     {detailRevenueTaxEnabled && (
                       <p className="text-slate-500">
-                        <b className="text-slate-800">Revenue tax:</b> {detailUsesRevenueTax ? "US 30% / BR 14%" : "Off"}
+                        <b className="text-slate-800">{t("Revenue tax:")}</b> {detailUsesRevenueTax ? revenueTaxRatesLabel(detailTax.applies) : t("Off")}
                       </p>
                     )}
                     {detail.currency !== "USD" && (
                       <p className={detail.exchange_rate?.missing ? "text-red-600" : "text-slate-500"}>
-                        <b className="text-slate-800">Exchange:</b> 1 USD = {detail.exchange_rate?.factor || 1} {detail.currency}
-                        {detail.exchange_rate?.missing ? " (missing rate for selected month)" : ""}
+                        <b className="text-slate-800">{t("Exchange:")}</b> {t("1 USD = {factor} {currency}", { factor: detail.exchange_rate?.factor || 1, currency: detail.currency })}
+                        {detail.exchange_rate?.missing ? ` ${t("(missing rate for selected month)")}` : ""}
                       </p>
                     )}
                   </div>
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 grid grid-cols-2 gap-4">
                     <p>
-                      <span className="text-xs text-slate-500 block">Total revenue USD</span>
+                      <span className="text-xs text-slate-500 block">{t("Total revenue USD")}</span>
                       <b>{usd(detail.summary.total_revenue_usd ?? detail.summary.total_revenue)}</b>
                       <small className="block text-slate-500 mt-1">{converted(detail.summary.total_revenue_converted ?? detail.summary.total_revenue, detail.currency)}</small>
                     </p>
                     <p>
-                      <span className="text-xs text-slate-500 block">Paid</span>
+                      <span className="text-xs text-slate-500 block">{t("Paid")}</span>
                       <b className="text-emerald-700">{converted(detail.summary.paid_converted ?? detail.summary.paid, detail.currency)}</b>
                       <small className="block text-slate-500 mt-1">{usd(detail.summary.paid_usd ?? detail.summary.paid)}</small>
                     </p>
                     <p>
-                      <span className="text-xs text-slate-500 block">Remaining USD</span>
+                      <span className="text-xs text-slate-500 block">{t("Remaining USD")}</span>
                       <b className="text-orange-600">{usd(detail.summary.remaining_usd ?? detail.summary.remaining)}</b>
                       <small className="block text-slate-500 mt-1">{converted(detail.summary.remaining_converted ?? detail.summary.remaining, detail.currency)}</small>
                     </p>
                     <p>
-                      <span className="text-xs text-slate-500 block">Fee</span>
+                      <span className="text-xs text-slate-500 block">{t("Fee")}</span>
                       <b className="text-red-600">{converted(detail.summary.fee_converted ?? 0, detail.currency)}</b>
                       <small className="block text-slate-500 mt-1">{detail.summary.fee_rate ?? detail.fee_rate ?? 0}%</small>
                     </p>
                     {detailUsesRevenueTax && (
                       <p>
-                        <span className="text-xs text-slate-500 block">Tax US / BR</span>
+                        <span className="text-xs text-slate-500 block">{t("Tax {taxes}", { taxes: revenueTaxKindsLabel(detailTax.applies) })}</span>
                         <b className="text-red-600">{usd(detail.summary.total_tax_usd ?? 0)}</b>
-                        <small className="block text-slate-500 mt-1">US {usd(detail.summary.tax_us ?? 0)} / BR {usd(detail.summary.tax_br ?? 0)}</small>
+                        {detailTaxColumns > 1 && (
+                          <small className="block text-slate-500 mt-1">US {usd(detail.summary.tax_us ?? 0)} / BR {usd(detail.summary.tax_br ?? 0)}</small>
+                        )}
                       </p>
                     )}
                     <p>
-                      <span className="text-xs text-slate-500 block">Payable</span>
+                      <span className="text-xs text-slate-500 block">{t("Payable")}</span>
                       <b className="text-emerald-700">{converted(detail.summary.payable_converted ?? detail.summary.paid_converted ?? detail.summary.paid, detail.currency)}</b>
                       <small className="block text-slate-500 mt-1">{usd(detail.summary.payable_usd ?? detail.summary.paid_usd ?? detail.summary.paid)}</small>
                     </p>
-                    <p><span className="text-xs text-slate-500 block">Channels</span><b>{detail.summary.channels}</b></p>
+                    <p><span className="text-xs text-slate-500 block">{t("Channels")}</span><b>{detail.summary.channels}</b></p>
                   </div>
                 </div>
 
                   <div className="mt-5">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">Revenue Tiers</h3>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">{t("Revenue Tiers")}</h3>
                   {(detail.tiers || []).length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                      Group này không dùng tier. Channel chỉ tính share khi có % riêng.
+                      {t("This group does not use tiers. Channels only get a share when they have their own %.")}
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -1511,9 +1525,9 @@ export default function GroupChannelPage() {
 
               <section className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
-                  <h2 className="font-black">List Channels</h2>
+                  <h2 className="font-black">{t("List Channels")}</h2>
                   <span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded-full">
-                    {channelSearch.trim() ? `${sortedDetailChannels.length} / ${detail.channels?.length || 0}` : detail.channels?.length || 0} channels
+                    {channelSearch.trim() ? t("{shown} / {total} channels", { shown: sortedDetailChannels.length, total: detail.channels?.length || 0 }) : t("{count} channels", { count: detail.channels?.length || 0 })}
                   </span>
                   <div className="relative min-w-[240px] max-w-md flex-1 sm:flex-none">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1521,7 +1535,7 @@ export default function GroupChannelPage() {
                       type="search"
                       value={channelSearch}
                       onChange={(event) => setChannelSearch(event.target.value)}
-                      placeholder="Search channel name, ID, keyword..."
+                      placeholder={t("Search channel name, ID, keyword...")}
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-9 text-sm outline-none focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
                     />
                     {channelSearch && (
@@ -1529,7 +1543,7 @@ export default function GroupChannelPage() {
                         type="button"
                         onClick={() => setChannelSearch("")}
                         className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        title="Clear search"
+                        title={t("Clear search")}
                       >
                         <X size={14} />
                       </button>
@@ -1537,38 +1551,34 @@ export default function GroupChannelPage() {
                   </div>
                 </div>
                 {!detail.channels?.length ? (
-                  <div className="p-12 text-slate-500">Group này chưa có channel nào.</div>
+                  <div className="p-12 text-slate-500">{t("This group has no channels yet.")}</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50 text-slate-500">
                         <tr>
                           <th className="text-left px-5 py-3">
-                            <SortButton label="Channel" active={channelSort.key === "channel"} direction={channelSort.direction} onClick={() => toggleChannelSort("channel")} />
+                            <SortButton label={t("Channel")} active={channelSort.key === "channel"} direction={channelSort.direction} onClick={() => toggleChannelSort("channel")} />
                           </th>
                           <th className="text-right px-5 py-3">
-                            <SortButton label="Revenue USD" active={channelSort.key === "revenue"} direction={channelSort.direction} onClick={() => toggleChannelSort("revenue")} align="right" />
+                            <SortButton label={t("Revenue USD")} active={channelSort.key === "revenue"} direction={channelSort.direction} onClick={() => toggleChannelSort("revenue")} align="right" />
                           </th>
-                          {detailUsesRevenueTax && (
-                            <>
-                              <th className="text-right px-5 py-3">Revenue US</th>
-                              <th className="text-right px-5 py-3">Revenue BR</th>
-                            </>
-                          )}
+                          {detailTax.applies.us && <th className="text-right px-5 py-3">{t("Revenue US")}</th>}
+                          {detailTax.applies.br && <th className="text-right px-5 py-3">{t("Revenue BR")}</th>}
                           <th className="text-right px-5 py-3">
-                            <SortButton label="Share Amount USD" active={channelSort.key === "share"} direction={channelSort.direction} onClick={() => toggleChannelSort("share")} align="right" />
+                            <SortButton label={t("Share Amount USD")} active={channelSort.key === "share"} direction={channelSort.direction} onClick={() => toggleChannelSort("share")} align="right" />
                           </th>
                           <th className="text-right px-5 py-3">
-                            <SortButton label={`Paid (${detail.currency})`} active={channelSort.key === "paid"} direction={channelSort.direction} onClick={() => toggleChannelSort("paid")} align="right" />
+                            <SortButton label={t("Paid ({currency})", { currency: detail.currency })} active={channelSort.key === "paid"} direction={channelSort.direction} onClick={() => toggleChannelSort("paid")} align="right" />
                           </th>
-                          {canViewReports && <th className="text-right px-5 py-3">Action</th>}
+                          {canViewReports && <th className="text-right px-5 py-3">{t("Action")}</th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {sortedDetailChannels.length === 0 && (
                           <tr>
-                            <td colSpan={(canViewReports ? 5 : 4) + (detailUsesRevenueTax ? 2 : 0)} className="px-5 py-10 text-center text-slate-500">
-                              No channels match this search.
+                            <td colSpan={(canViewReports ? 5 : 4) + detailTaxColumns} className="px-5 py-10 text-center text-slate-500">
+                              {t("No channels match this search.")}
                             </td>
                           </tr>
                         )}
@@ -1581,7 +1591,7 @@ export default function GroupChannelPage() {
                                   target="_blank"
                                   rel="noreferrer"
                                   className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0"
-                                  title="Mở channel trong tab mới"
+                                  title={t("Open the channel in a new tab")}
                                 >
                                   <img src={channel.thumbnail || "/favicon.svg"} className="w-full h-full object-cover" />
                                 </a>
@@ -1593,30 +1603,30 @@ export default function GroupChannelPage() {
                                       type="button"
                                       onClick={() => copyChannelId(channel.channel_id)}
                                       className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 flex items-center justify-center"
-                                      title="Copy Channel ID"
+                                      title={t("Copy Channel ID")}
                                     >
                                       <Copy size={13} />
                                     </button>
                                   </div>
                                   <div className="mt-1 flex max-w-full flex-wrap items-center gap-2 text-xs text-slate-500">
-                                    <span className="inline-flex rounded-lg bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">Share: {channel.applied_share || 0}%</span>
-                                    <span className="max-w-[220px] truncate text-slate-500">Network: {channel.network_name || "-"}</span>
+                                    <span className="inline-flex rounded-lg bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">{t("Share: {share}%", { share: channel.applied_share || 0 })}</span>
+                                    <span className="max-w-[220px] truncate text-slate-500">{t("Network: {network}", { network: channel.network_name || "-" })}</span>
                                   </div>
                                 </div>
                               </div>
                             </td>
                             <td className="px-5 py-4 text-right font-black">{usd(channel.revenue_usd ?? channel.revenue)}</td>
-                            {detailUsesRevenueTax && (
-                              <>
-                                <td className="px-5 py-4 text-right">
-                                  <p className="font-black text-blue-700">{usd(channel.revenue_us || 0)}</p>
-                                  <p className="mt-1 text-[11px] font-bold text-red-500">tax us: {usd(channel.tax_us || 0)}</p>
-                                </td>
-                                <td className="px-5 py-4 text-right">
-                                  <p className="font-black text-indigo-700">{usd(channel.revenue_br || 0)}</p>
-                                  <p className="mt-1 text-[11px] font-bold text-red-500">tax br: {usd(channel.tax_br || 0)}</p>
-                                </td>
-                              </>
+                            {detailTax.applies.us && (
+                              <td className="px-5 py-4 text-right">
+                                <p className="font-black text-blue-700">{usd(channel.revenue_us || 0)}</p>
+                                <p className="mt-1 text-[11px] font-bold text-red-500">{t("tax US: {amount}", { amount: usd(channel.tax_us || 0) })}</p>
+                              </td>
+                            )}
+                            {detailTax.applies.br && (
+                              <td className="px-5 py-4 text-right">
+                                <p className="font-black text-indigo-700">{usd(channel.revenue_br || 0)}</p>
+                                <p className="mt-1 text-[11px] font-bold text-red-500">{t("tax BR: {amount}", { amount: usd(channel.tax_br || 0) })}</p>
+                              </td>
                             )}
                             <td className="px-5 py-4 text-right font-black text-slate-900">{usd(channel.share_amount)}</td>
                             <td className="px-5 py-4 text-right font-black text-emerald-700">{converted(channel.paid ?? channel.share_amount_converted ?? channel.share_amount, detail.currency)}</td>
@@ -1624,7 +1634,7 @@ export default function GroupChannelPage() {
                               <td className="px-5 py-4 text-right">
                                 <button onClick={() => removeChannel(channel.group_channel_id)} className="px-3 py-2 rounded-xl bg-red-50 text-red-600 font-bold inline-flex items-center gap-2">
                                   <Trash2 size={15} />
-                                  Xóa
+                                  {t("Delete")}
                                 </button>
                               </td>
                             )}
@@ -1644,17 +1654,17 @@ export default function GroupChannelPage() {
         <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={saveGroup} className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="font-black text-xl">{editing ? "Sửa Group Channel" : "Tạo Group Channel"}</h2>
+              <h2 className="font-black text-xl">{editing ? t("Edit Group Channel") : t("Create Group Channel")}</h2>
               <button type="button" onClick={() => setGroupModal(false)} className="w-10 h-10 rounded-xl border border-slate-300 flex items-center justify-center"><X size={18} /></button>
             </div>
             <div className="p-6">
-              <GroupForm partners={partners} collaborators={collaborators} isEditing={Boolean(editing)} value={groupForm} onChange={setGroupForm} revenueTaxEnabled={revenueTaxEnabled} />
+              <GroupForm partners={partners} collaborators={collaborators} isEditing={Boolean(editing)} value={groupForm} onChange={setGroupForm} revenueTax={revenueTax} />
             </div>
             <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3">
-              <button type="button" onClick={() => setGroupModal(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Hủy</button>
+              <button type="button" onClick={() => setGroupModal(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">{t("Cancel")}</button>
               <button type="submit" disabled={saving} className="px-5 py-3 rounded-2xl bg-emerald-600 text-white font-bold flex items-center gap-2 disabled:opacity-60">
                 {saving ? <Loader2 className="animate-spin" size={18} /> : null}
-                {editing ? "Lưu group" : "Tạo group"}
+                {editing ? t("Save group") : t("Create group")}
               </button>
             </div>
           </form>
@@ -1665,48 +1675,48 @@ export default function GroupChannelPage() {
         <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={addChannels} className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl">
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="font-black text-xl">Add channels to group</h2>
+              <h2 className="font-black text-xl">{t("Add channels to group")}</h2>
               <button type="button" onClick={() => setAddModal(false)} className="w-10 h-10 rounded-xl border border-slate-300 flex items-center justify-center"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-5">
               <label>
                 <span className="mb-3 flex items-center justify-between gap-3">
-                  <span className="font-black text-slate-900">Channel IDs / Handles / Links</span>
+                  <span className="font-black text-slate-900">{t("Channel IDs / Handles / Links")}</span>
                   <button
                     type="button"
                     onClick={loadPartnerManagedChannels}
                     disabled={loadingPartnerChannels || !detail?.partner_id}
                     className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Load Channel Management channels assigned to this partner"
+                    title={t("Load Channel Management channels assigned to this partner")}
                   >
                     {loadingPartnerChannels ? <Loader2 className="animate-spin" size={14} /> : <Users size={14} />}
-                    Load partner channels
+                    {t("Load partner channels")}
                   </button>
                 </span>
                 <textarea
                   value={channelInputs}
                   onChange={(e) => setChannelInputs(e.target.value)}
                   className="w-full min-h-44 rounded-3xl border border-slate-300 px-4 py-4 outline-none focus:border-emerald-500"
-                  placeholder={"UCxxxxxxxx\n@mychannel\nhttps://youtube.com/@mychannel"}
+                  placeholder={t("UCxxxxxxxx\n@mychannel\nhttps://youtube.com/@mychannel")}
                   required
                 />
               </label>
               <label>
-                <span className="font-black text-slate-900 mb-3 block">Revenue share override</span>
+                <span className="font-black text-slate-900 mb-3 block">{t("Revenue share override")}</span>
                 <input
                   type="number"
                   value={revenueShare}
                   onChange={(e) => setRevenueShare(e.target.value)}
                   className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-500"
-                  placeholder="Có thể để trống"
+                  placeholder={t("Can be left empty")}
                 />
               </label>
             </div>
             <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3">
-              <button type="button" onClick={() => setAddModal(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Hủy</button>
+              <button type="button" onClick={() => setAddModal(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">{t("Cancel")}</button>
               <button type="submit" disabled={saving} className="px-5 py-3 rounded-2xl bg-emerald-600 text-white font-bold flex items-center gap-2 disabled:opacity-60">
                 {saving ? <Loader2 className="animate-spin" size={18} /> : null}
-                Thêm channel
+                {t("Add channels")}
               </button>
             </div>
           </form>
@@ -1718,22 +1728,22 @@ export default function GroupChannelPage() {
           <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl">
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="font-black text-xl">Export invoice</h2>
-                <p className="text-sm text-slate-500 mt-1">Choose the sender company and export format.</p>
+                <h2 className="font-black text-xl">{t("Export invoice")}</h2>
+                <p className="text-sm text-slate-500 mt-1">{t("Choose the sender company and export format.")}</p>
               </div>
               <button type="button" onClick={() => setExportModalOpen(false)} className="w-10 h-10 rounded-xl border border-slate-300 flex items-center justify-center"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {canViewReports && (
               <label>
-                <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Company</span>
+                <span className="text-xs font-black uppercase text-slate-400 mb-2 block">{t("Company")}</span>
                 <select
                   value={selectedCompanyId}
                   onChange={(event) => setSelectedCompanyId(event.target.value)}
                   className="w-full rounded-2xl border border-slate-300 px-4 py-3 bg-white"
                 >
                   {companies.length === 0 ? (
-                    <option value="">Default company profile</option>
+                    <option value="">{t("Default company profile")}</option>
                   ) : companies.map((company) => (
                     <option key={company.id} value={company.id}>{company.company_name}</option>
                   ))}
@@ -1741,9 +1751,9 @@ export default function GroupChannelPage() {
               </label>
               )}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                <p><b className="text-slate-900">{detail.collaborator_id ? "Collaborator:" : "Partner:"}</b> {detail.partner_name}</p>
-                <p><b className="text-slate-900">Month:</b> {monthLabel(detail.month)}</p>
-                <p><b className="text-slate-900">Payable:</b> {converted(detail.summary?.payable_converted ?? detail.summary?.paid_converted ?? 0, detail.currency)}</p>
+                <p><b className="text-slate-900">{detail.collaborator_id ? t("Collaborator:") : t("Partner:")}</b> {detail.partner_name}</p>
+                <p><b className="text-slate-900">{t("Month:")}</b> {monthLabel(detail.month)}</p>
+                <p><b className="text-slate-900">{t("Payable:")}</b> {converted(detail.summary?.payable_converted ?? detail.summary?.paid_converted ?? 0, detail.currency)}</p>
               </div>
               <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 cursor-pointer">
                 <input
@@ -1753,8 +1763,8 @@ export default function GroupChannelPage() {
                   className="mt-1 h-4 w-4 rounded border-slate-300"
                 />
                 <span>
-                  <span className="block font-black text-slate-900">Include signature boxes in PDF</span>
-                  <span className="block text-sm text-slate-500 mt-1">Add company and partner signature areas with Sign, Name, and Title lines.</span>
+                  <span className="block font-black text-slate-900">{t("Include signature boxes in PDF")}</span>
+                  <span className="block text-sm text-slate-500 mt-1">{t("Add company and partner signature areas with Sign, Name, and Title lines.")}</span>
                 </span>
               </label>
               {detailRevenueTaxEnabled && (
@@ -1766,14 +1776,14 @@ export default function GroupChannelPage() {
                     className="mt-1 h-4 w-4 rounded border-slate-300"
                   />
                   <span>
-                    <span className="block font-black text-slate-900">Export US - BR in Excel</span>
-                    <span className="block text-sm text-slate-500 mt-1">Add Revenue US, Tax US, Revenue BR, and Tax BR beside Revenue Total.</span>
+                    <span className="block font-black text-slate-900">{t("Export {taxes} tax columns in Excel", { taxes: revenueTaxKindsLabel(detailTax.enabled) })}</span>
+                    <span className="block text-sm text-slate-500 mt-1">{t("Add {columns} beside Revenue Total.", { columns: revenueTaxColumnsLabel(detailTax.enabled) })}</span>
                   </span>
                 </label>
               )}
             </div>
             <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3">
-              <button type="button" onClick={() => setExportModalOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Cancel</button>
+              <button type="button" onClick={() => setExportModalOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">{t("Cancel")}</button>
               <button
                 type="button"
                 onClick={() => exportFromBackend("excel")}
@@ -1800,7 +1810,7 @@ export default function GroupChannelPage() {
       {toast && (
         <div className="fixed left-1/2 bottom-6 z-[60] -translate-x-1/2 rounded-2xl bg-slate-950 text-white px-5 py-3 shadow-2xl flex items-center gap-3">
           <Check size={18} className="text-emerald-400" />
-          <span className="font-bold">{toast}</span>
+          <span className="font-bold">{tm(toast)}</span>
         </div>
       )}
     </div>

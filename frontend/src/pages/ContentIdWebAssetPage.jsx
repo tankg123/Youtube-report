@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileVideo, FolderOpen, RefreshCw, Trash2 } from "lucide-react";
 import api from "../api/api";
+import { useI18n } from "../context/I18nContext";
+import { tk } from "../i18n/index.js";
 
 const MATCH_POLICIES = [
-  "Monetize in all countries",
-  "Track in all countries",
-  "Block in all countries",
-  "Manual Review"
+  tk("Monetize in all countries"),
+  tk("Track in all countries"),
+  tk("Block in all countries"),
+  tk("Manual Review")
 ];
 
 const VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi"];
@@ -56,6 +58,7 @@ function downloadCSV(data, filename) {
 }
 
 export default function ContentIdWebAssetPage() {
+  const { t } = useI18n();
   const folderRef = useRef(null);
   const [rows, setRows] = useState([]);
   const [matchPolicy, setMatchPolicy] = useState(MATCH_POLICIES[0]);
@@ -81,7 +84,7 @@ export default function ContentIdWebAssetPage() {
       .then((res) => setLabels(res.data.labels || []))
       .catch(() => {
         setLabels([]);
-        showToast("Could not load labels.");
+        showToast(t("Could not load labels."));
       });
   };
 
@@ -100,13 +103,13 @@ export default function ContentIdWebAssetPage() {
       .map((file) => makeRow(file.name));
 
     if (!nextRows.length) {
-      showToast("No supported video files found.");
+      showToast(t("No supported video files found."));
       return;
     }
 
     setRows((current) => regenerateCustomIds([...current, ...nextRows]));
     setErrors({});
-    showToast(`Added ${nextRows.length} video files.`);
+    showToast(t("Added {count} video files.", { count: nextRows.length }));
   };
 
   const updateRow = (rowId, field, value) => {
@@ -149,7 +152,7 @@ export default function ContentIdWebAssetPage() {
     setFilename("");
     setErrors({});
     if (folderRef.current) folderRef.current.value = "";
-    showToast("Table and data reset.");
+    showToast(t("Table and data reset."));
   };
 
   const replaceTitles = () => {
@@ -158,21 +161,21 @@ export default function ContentIdWebAssetPage() {
       ...row,
       title: titles[index] || row.title
     })));
-    showToast("Titles updated.");
+    showToast(t("Titles updated."));
   };
 
   const exportCSV = () => {
     if (!filename.trim()) {
-      showToast("Please enter a CSV file name.");
+      showToast(t("Please enter a CSV file name."));
       setErrors((current) => ({ ...current, filename: true }));
       return;
     }
     if (!rows.length) {
-      showToast("No data to export.");
+      showToast(t("No data to export."));
       return;
     }
     if (!matchPolicy) {
-      showToast("Please select a match policy.");
+      showToast(t("Please select a match policy."));
       setErrors((current) => ({ ...current, matchPolicy: true }));
       return;
     }
@@ -187,7 +190,7 @@ export default function ContentIdWebAssetPage() {
 
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
-      showToast("Please fill in all required fields.");
+      showToast(t("Please fill in all required fields."));
       return;
     }
 
@@ -205,7 +208,7 @@ export default function ContentIdWebAssetPage() {
     ];
     const outputName = filename.trim().endsWith(".csv") ? filename.trim() : `${filename.trim()}.csv`;
     downloadCSV(data, outputName);
-    showToast(`Downloaded ${outputName}.`);
+    showToast(t("Downloaded {filename}.", { filename: outputName }));
   };
 
   const inputClass = (key) => [
@@ -222,8 +225,8 @@ export default function ContentIdWebAssetPage() {
               <FileVideo size={14} />
               Content ID
             </span>
-            <h1 className="mt-3 text-3xl font-black text-slate-950">Web Asset Reference Only CID</h1>
-            <p className="mt-1 text-sm text-slate-500">Create reference-only CSV files from video folders.</p>
+            <h1 className="mt-3 text-3xl font-black text-slate-950">{t("Web Asset Reference Only CID")}</h1>
+            <p className="mt-1 text-sm text-slate-500">{t("Create reference-only CSV files from video folders.")}</p>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -241,7 +244,7 @@ export default function ContentIdWebAssetPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700"
             >
               <FolderOpen size={17} />
-              Select video folder
+              {t("Select video folder")}
             </button>
             <button
               type="button"
@@ -249,7 +252,7 @@ export default function ContentIdWebAssetPage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 transition hover:bg-slate-50"
             >
               <RefreshCw size={16} />
-              Clear table
+              {t("Clear table")}
             </button>
             <button
               type="button"
@@ -257,7 +260,7 @@ export default function ContentIdWebAssetPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
             >
               <Download size={17} />
-              Download CSV
+              {t("Download CSV")}
             </button>
           </div>
         </div>
@@ -266,7 +269,7 @@ export default function ContentIdWebAssetPage() {
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
           <label className="space-y-2">
-            <span className="text-xs font-black uppercase tracking-wider text-slate-500">Match policy</span>
+            <span className="text-xs font-black uppercase tracking-wider text-slate-500">{t("Match policy")}</span>
             <select
               value={matchPolicy}
               onChange={(event) => {
@@ -276,35 +279,35 @@ export default function ContentIdWebAssetPage() {
               className={inputClass("matchPolicy")}
             >
               {MATCH_POLICIES.map((policy) => (
-                <option key={policy} value={policy}>{policy}</option>
+                <option key={policy} value={policy}>{t(policy)}</option>
               ))}
             </select>
           </label>
 
           <label className="space-y-2">
-            <span className="text-xs font-black uppercase tracking-wider text-slate-500">CSV file name</span>
+            <span className="text-xs font-black uppercase tracking-wider text-slate-500">{t("CSV file name")}</span>
             <input
               value={filename}
               onChange={(event) => {
                 setFilename(event.target.value);
                 setErrors((current) => ({ ...current, filename: false }));
               }}
-              placeholder="File name"
+              placeholder={t("File name")}
               className={inputClass("filename")}
             />
           </label>
 
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-2xl bg-slate-50 p-3">
-              <p className="text-xs font-bold text-slate-500">Rows</p>
+              <p className="text-xs font-bold text-slate-500">{t("Rows")}</p>
               <p className="text-2xl font-black text-slate-950">{rows.length}</p>
             </div>
             <div className="rounded-2xl bg-slate-50 p-3">
-              <p className="text-xs font-bold text-slate-500">Labels</p>
+              <p className="text-xs font-bold text-slate-500">{t("Labels")}</p>
               <p className="text-2xl font-black text-slate-950">{stats.filledLabels}</p>
             </div>
             <div className="rounded-2xl bg-slate-50 p-3">
-              <p className="text-xs font-bold text-slate-500">Ownership</p>
+              <p className="text-xs font-bold text-slate-500">{t("Ownership")}</p>
               <p className="text-2xl font-black text-slate-950">{stats.filledOwnership}</p>
             </div>
           </div>
@@ -312,30 +315,30 @@ export default function ContentIdWebAssetPage() {
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <div>
-            <p className="text-sm font-black text-slate-900">Asset Label source</p>
-            <p className="text-xs text-slate-500">Choose from labels created in Content ID &gt; Label.</p>
+            <p className="text-sm font-black text-slate-900">{t("Asset Label source")}</p>
+            <p className="text-xs text-slate-500">{t("Choose from labels created in Content ID > Label.")}</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{labels.length} labels</span>
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{t("{count} labels", { count: labels.length })}</span>
             <button
               type="button"
               onClick={loadLabels}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100"
             >
               <RefreshCw size={14} />
-              Refresh labels
+              {t("Refresh labels")}
             </button>
           </div>
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
           <label className="space-y-2">
-            <span className="text-xs font-black uppercase tracking-wider text-slate-500">Bulk title replacement</span>
+            <span className="text-xs font-black uppercase tracking-wider text-slate-500">{t("Bulk title replacement")}</span>
             <textarea
               value={multiTitles}
               onChange={(event) => setMultiTitles(event.target.value)}
               rows={4}
-              placeholder="Paste one title per line"
+              placeholder={t("Paste one title per line")}
               className="w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
           </label>
@@ -344,7 +347,7 @@ export default function ContentIdWebAssetPage() {
             onClick={replaceTitles}
             className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-100"
           >
-            Update titles
+            {t("Update titles")}
           </button>
         </div>
       </section>
@@ -352,10 +355,10 @@ export default function ContentIdWebAssetPage() {
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 className="text-lg font-black text-slate-950">Reference rows</h2>
-            <p className="text-sm text-slate-500">Custom ID is generated automatically and exported as a hidden CSV field.</p>
+            <h2 className="text-lg font-black text-slate-950">{t("Reference rows")}</h2>
+            <p className="text-sm text-slate-500">{t("Custom ID is generated automatically and exported as a hidden CSV field.")}</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{rows.length} rows</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{t("{count} rows", { count: rows.length })}</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -363,17 +366,17 @@ export default function ContentIdWebAssetPage() {
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="w-16 px-4 py-3 text-center">X</th>
-                <th className="px-4 py-3">Reference filename</th>
-                <th className="px-4 py-3">Asset Label</th>
-                <th className="px-4 py-3">Title</th>
-                <th className="px-4 py-3">Ownership</th>
+                <th className="px-4 py-3">{t("Reference filename")}</th>
+                <th className="px-4 py-3">{t("Asset Label")}</th>
+                <th className="px-4 py-3">{t("Title")}</th>
+                <th className="px-4 py-3">{t("Ownership")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {!rows.length && (
                 <tr>
                   <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
-                    Select a folder with .mp4, .mov, or .avi files to start.
+                    {t("Select a folder with .mp4, .mov, or .avi files to start.")}
                   </td>
                 </tr>
               )}
@@ -384,7 +387,7 @@ export default function ContentIdWebAssetPage() {
                       type="button"
                       onClick={() => removeRow(row.id)}
                       className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-500 transition hover:bg-red-100"
-                      title="Remove row"
+                      title={t("Remove row")}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -403,7 +406,7 @@ export default function ContentIdWebAssetPage() {
                       onChange={(event) => updateRow(row.id, "add_asset_labels", event.target.value)}
                       className={inputClass(`${row.id}:add_asset_labels`)}
                     >
-                      <option value="">{labels.length ? "Select label" : "No labels available"}</option>
+                      <option value="">{labels.length ? t("Select label") : t("No labels available")}</option>
                       {labels.map((label) => (
                         <option key={label.id} value={label.name}>{label.display_name || label.name}</option>
                       ))}
@@ -413,7 +416,7 @@ export default function ContentIdWebAssetPage() {
                     <input
                       value={row.title}
                       onChange={(event) => updateRow(row.id, "title", event.target.value)}
-                      placeholder="Title"
+                      placeholder={t("Title")}
                       className={inputClass(`${row.id}:title`)}
                     />
                   </td>
@@ -421,7 +424,7 @@ export default function ContentIdWebAssetPage() {
                     <input
                       value={row.ownership}
                       onChange={(event) => updateRow(row.id, "ownership", event.target.value)}
-                      placeholder="Ownership"
+                      placeholder={t("Ownership")}
                       className={inputClass(`${row.id}:ownership`)}
                     />
                   </td>

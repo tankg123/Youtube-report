@@ -8,8 +8,8 @@ const db = require("../config/database");
 const { getChannelFromYoutube, getChannelsFromYoutube, getQuotaStatus } = require("../services/youtubeService");
 const { generateGroupReconciliationExcel } = require("../services/reconciliationTemplateService");
 const {
-  isRevenueTaxEnabled,
-  groupAppliesRevenueTax,
+  enabledRevenueTaxFlags,
+  groupRevenueTaxFlags,
   revenueTaxAmounts,
   revenueTaxSqlExpression,
   toFlag
@@ -245,8 +245,10 @@ function isRevenueBrHeader(cell) {
     && !/\b(non|ex|excl|excluding|outside)\s+(br|bra|brazil|brasil)\b/.test(cell);
 }
 
-function normalizeRows(rows) {
-  if (!rows.length) return [];
+// Rows aggregated per channel plus which optional columns the header carried, so the import can tell the
+// operator when a tax that is switched on has no matching column in the file.
+function analyzeImportRows(rows) {
+  if (!rows.length) return { rows: [], columns: { revenue_us: false, revenue_br: false } };
 
   const header = rows[0].map((cell) => String(cell || ""));
   let channelIndex = findHeaderIndex(header, (cell) => cell.includes("channel") && cell.includes("id"));
@@ -286,8 +288,12 @@ function normalizeRows(rows) {
     }
   }
 
-  return [...totals.entries()].map(([channel_id, values]) => ({ channel_id, ...values }));
+  return {
+    rows: [...totals.entries()].map(([channel_id, values]) => ({ channel_id, ...values })),
+    columns: { revenue_us: revenueUsIndex >= 0, revenue_br: revenueBrIndex >= 0 }
+  };
 }
+exports.analyzeImportRows = analyzeImportRows;
 
 function parseChannel(row) {
   if (!row) return row;
@@ -488,8 +494,9 @@ function exchangeFactor(currency = "USD", month = "") {
 }
 
 function groupRevenueTotalUsd(groupId, month = "", appliesRevenueTax = false) {
-  // When the group withholds US / BR tax, tiers are evaluated on the after-tax share base.
-  const revenueExpression = appliesRevenueTax ? revenueTaxSqlExpression("cr") : "cr.revenue";
+  // When the group withholds US and/or BR tax, tiers are evaluated on the after-tax share base: the expression
+  // subtracts only the kinds that apply and is the plain revenue when none does.
+  const revenueExpression = revenueTaxSqlExpression("cr", appliesRevenueTax);
   const row = db.prepare(`
     SELECT COALESCE(SUM(${revenueExpression}), 0) AS total_revenue
     FROM group_channels gc
@@ -508,7 +515,7 @@ function groupRevenueTotalUsd(groupId, month = "", appliesRevenueTax = false) {
 function groupDefaultShare(groupId, month = "") {
   const group = parseGroup(db.prepare("SELECT * FROM channel_groups WHERE id = ?").get(groupId));
   if (!group) return 0;
-  return tierRate(group.tiers, groupRevenueTotalUsd(groupId, month, groupAppliesRevenueTax(group)));
+  return tierRate(group.tiers, groupRevenueTotalUsd(groupId, month, groupRevenueTaxFlags(group)));
 }
 
 function existingShareForChannel(channelId, month = "", excludeGroupId = null, ownerType = null) {
@@ -554,8 +561,9 @@ function groupDetail(groupId, month) {
   }
 
   const conversion = exchangeFactor(group.currency, month);
-  const revenueTaxEnabled = isRevenueTaxEnabled();
-  const appliesRevenueTax = groupAppliesRevenueTax(group, revenueTaxEnabled);
+  const revenueTaxFlags = enabledRevenueTaxFlags();
+  const groupTaxFlags = groupRevenueTaxFlags(group, revenueTaxFlags);
+  const appliesRevenueTax = groupTaxFlags.any;
   const channels = db.prepare(`
     SELECT gc.id AS group_channel_id, gc.custom_share, gc.custom_share_override, gc.channel_id AS group_channel_ref,
            c.*, COALESCE(cr.revenue, 0) AS revenue,
@@ -603,7 +611,7 @@ function groupDetail(groupId, month) {
   // US / BR withholding (when enabled for this group) is removed from the revenue before the share rate is applied.
   const taxedChannels = channels.map((channel) => {
     const revenueUsd = Number(channel.revenue_usd || 0);
-    const tax = revenueTaxAmounts(channel, appliesRevenueTax);
+    const tax = revenueTaxAmounts(channel, groupTaxFlags);
     return { ...channel, ...tax, share_base_usd: revenueUsd - tax.total_tax_usd };
   });
   const totalShareBaseUsd = taxedChannels.reduce((sum, channel) => sum + Number(channel.share_base_usd || 0), 0);
@@ -678,8 +686,12 @@ function groupDetail(groupId, month) {
       default_rate: defaultRate,
       tier_currency: "USD",
       tier_revenue_usd: totalShareBaseUsd,
-      revenue_tax_enabled: revenueTaxEnabled ? 1 : 0,
+      revenue_tax_enabled: revenueTaxFlags.any ? 1 : 0,
+      revenue_tax_us_enabled: revenueTaxFlags.us ? 1 : 0,
+      revenue_tax_br_enabled: revenueTaxFlags.br ? 1 : 0,
       apply_revenue_tax: appliesRevenueTax ? 1 : 0,
+      apply_tax_us: groupTaxFlags.us ? 1 : 0,
+      apply_tax_br: groupTaxFlags.br ? 1 : 0,
       revenue_us: totalRevenueUs,
       revenue_br: totalRevenueBr,
       tax_us: totalTaxUs,
@@ -999,8 +1011,15 @@ function buildReconciliationWorkbook(detail, company) {
 
 async function sendExcelExport(res, detail, company, options = {}) {
   const language = getExportTemplateLanguage(options.language);
-  const exportUsBr = toFlag(options.export_us_br) === 1 && isRevenueTaxEnabled();
-  const buffer = await generateGroupReconciliationExcel(detail, company, { language, export_us_br: exportUsBr });
+  // Only the kinds switched on in Settings get their Revenue / Tax columns; none when the option is off.
+  const revenueTaxFlags = enabledRevenueTaxFlags();
+  const exportUsBr = toFlag(options.export_us_br) === 1 && revenueTaxFlags.any;
+  const buffer = await generateGroupReconciliationExcel(detail, company, {
+    language,
+    export_us_br: exportUsBr,
+    export_tax_us: exportUsBr && revenueTaxFlags.us,
+    export_tax_br: exportUsBr && revenueTaxFlags.br
+  });
   const fileName = groupExportFileName(detail, "xlsx");
   setDownloadHeaders(res, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
   res.send(buffer);
@@ -1307,7 +1326,15 @@ exports.importManagerReport = async (req, res) => {
       return res.status(400).json({ success: false, message: "Vui lòng chọn network" });
     }
 
-    const rows = normalizeRows(parseImportFile(fileBase64, fileName));
+    const imported = analyzeImportRows(parseImportFile(fileBase64, fileName));
+    const rows = imported.rows;
+    // A tax that is switched on but has no column in this file: the import still runs (that portion is 0) and
+    // the operator is told, so a report exported without the US / BR columns never zeroes the tax silently.
+    const revenueTaxFlags = enabledRevenueTaxFlags();
+    const missingTaxColumns = [
+      ...(revenueTaxFlags.us && !imported.columns.revenue_us ? ["us"] : []),
+      ...(revenueTaxFlags.br && !imported.columns.revenue_br ? ["br"] : [])
+    ];
 
     if (!rows.length) {
       return res.status(400).json({ success: false, message: "File không có dữ liệu channel/revenue hợp lệ" });
@@ -1396,7 +1423,10 @@ exports.importManagerReport = async (req, res) => {
           : null,
         total_revenue: totalRevenue,
         total_revenue_us: totalRevenueUs,
-        total_revenue_br: totalRevenueBr
+        total_revenue_br: totalRevenueBr,
+        columns: imported.columns,
+        revenue_tax: { us: revenueTaxFlags.us ? 1 : 0, br: revenueTaxFlags.br ? 1 : 0 },
+        missing_tax_columns: missingTaxColumns
       }
     });
   } catch (error) {

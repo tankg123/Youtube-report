@@ -1,29 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpDown, CloudDownload, Copy, Loader2, Plus, RefreshCw, Search, ShieldCheck, Trash2, X } from "lucide-react";
 import api from "../api/api";
+import { useI18n } from "../context/I18nContext";
+import { tk } from "../i18n/index.js";
 
 function getErrorMessage(error) {
   return error.response?.data?.message
     || error.response?.data?.error
     || error.message
-    || "Request failed";
+    || tk("Request failed");
 }
 
-function formatApiErrors(errors = []) {
+function formatApiErrors(errors = [], { t, tm }) {
   const unique = [];
   const seen = new Set();
 
   errors.forEach((item) => {
-    const message = item.message || item.error || item.input || "Request failed";
+    const message = item.message || item.error || item.input || tk("Request failed");
     const key = item.code === "quotaExceeded" ? "quotaExceeded" : message;
     if (seen.has(key)) return;
     seen.add(key);
-    unique.push(message);
+    unique.push(tm(message));
   });
 
   if (!unique.length) return "";
   const visible = unique.slice(0, 5);
-  return `${visible.join("; ")}${unique.length > visible.length ? `; and ${unique.length - visible.length} more error(s).` : ""}`;
+  return `${visible.join("; ")}${unique.length > visible.length ? t("; and {count} more error(s).", { count: unique.length - visible.length }) : ""}`;
 }
 
 function formatCompact(value) {
@@ -35,6 +37,7 @@ function formatCompact(value) {
 }
 
 export default function ContentIdWhitelistPage() {
+  const { t, tm } = useI18n();
   const [rows, setRows] = useState([]);
   const [networks, setNetworks] = useState([]);
   const [selected, setSelected] = useState([]);
@@ -139,9 +142,9 @@ export default function ContentIdWhitelistPage() {
     if (!channelId) return;
     try {
       await navigator.clipboard.writeText(channelId);
-      setToast(`Copied channel ${channelId}`);
+      setToast(t("Copied channel {channelId}", { channelId }));
     } catch (err) {
-      setError("Could not copy channel ID.");
+      setError(tk("Could not copy channel ID."));
     }
   }
 
@@ -154,8 +157,8 @@ export default function ContentIdWhitelistPage() {
         network_id: networkId || undefined
       }, { timeout: 90000 });
       const data = response.data;
-      setMessage(`Synced ${data.synced || 0} whitelist channel(s). Removed ${data.deleted_stale || 0} stale row(s).`);
-      if (data.errors?.length) setError(formatApiErrors(data.errors));
+      setMessage(t("Synced {synced} whitelist channel(s). Removed {removed} stale row(s).", { synced: data.synced || 0, removed: data.deleted_stale || 0 }));
+      if (data.errors?.length) setError(formatApiErrors(data.errors, { t, tm }));
       await loadRows();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -172,13 +175,13 @@ export default function ContentIdWhitelistPage() {
       const response = await api.post("/content-id/whitelists/sync-channel-info", {
         network_id: networkId || undefined
       }, { timeout: 90000 });
-      setMessage(response.data.message || `Synced channel info for ${response.data.synced || 0} channel(s).`);
-      if (response.data.errors?.length) setError(formatApiErrors(response.data.errors));
+      setMessage(response.data.message || t("Synced channel info for {count} channel(s).", { count: response.data.synced || 0 }));
+      if (response.data.errors?.length) setError(formatApiErrors(response.data.errors, { t, tm }));
       await loadRows();
     } catch (err) {
       const apiErrors = err.response?.data?.errors;
       if (apiErrors?.length) {
-        setError(formatApiErrors(apiErrors));
+        setError(formatApiErrors(apiErrors, { t, tm }));
       } else {
         setError(getErrorMessage(err));
       }
@@ -190,7 +193,7 @@ export default function ContentIdWhitelistPage() {
   async function handleAdd(event) {
     event.preventDefault();
     if (!addNetworkId) {
-      setError("Choose a CMS network first.");
+      setError(tk("Choose a CMS network first."));
       return;
     }
     setAdding(true);
@@ -201,8 +204,8 @@ export default function ContentIdWhitelistPage() {
         network_id: addNetworkId,
         channels: channelText
       }, { timeout: 90000 });
-      setMessage(response.data.message || "Whitelist updated.");
-      if (response.data.errors?.length) setError(formatApiErrors(response.data.errors));
+      setMessage(response.data.message || tk("Whitelist updated."));
+      if (response.data.errors?.length) setError(formatApiErrors(response.data.errors, { t, tm }));
       setChannelText("");
       setAddOpen(false);
       await loadRows();
@@ -223,8 +226,8 @@ export default function ContentIdWhitelistPage() {
         data: { ids },
         timeout: 90000
       });
-      setMessage(response.data.message || "Whitelist channel(s) removed.");
-      if (response.data.errors?.length) setError(formatApiErrors(response.data.errors));
+      setMessage(response.data.message || tk("Whitelist channel(s) removed."));
+      if (response.data.errors?.length) setError(formatApiErrors(response.data.errors, { t, tm }));
       setSelected([]);
       await loadRows();
     } catch (err) {
@@ -240,7 +243,7 @@ export default function ContentIdWhitelistPage() {
       <button
         type="button"
         onClick={() => toggleSort(field)}
-        title={`Sort ${label}`}
+        title={t("Sort {label}", { label })}
         className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-black uppercase tracking-wide transition hover:bg-blue-50 hover:text-blue-600 ${
           isActive ? "bg-blue-50 text-blue-600" : "text-slate-500"
         }`}
@@ -260,9 +263,9 @@ export default function ContentIdWhitelistPage() {
               <ShieldCheck size={15} />
               Content ID
             </p>
-            <h1 className="mt-3 text-3xl font-black text-slate-950">Whitelist</h1>
+            <h1 className="mt-3 text-3xl font-black text-slate-950">{t("Whitelist")}</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Sync CMS whitelisted channels, review channel stats, add channels, and remove channels from whitelist.
+              {t("Sync CMS whitelisted channels, review channel stats, add channels, and remove channels from whitelist.")}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -273,7 +276,7 @@ export default function ContentIdWhitelistPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-60"
             >
               {syncing ? <Loader2 size={17} className="animate-spin" /> : <CloudDownload size={17} />}
-              Sync CMS whitelist
+              {t("Sync CMS whitelist")}
             </button>
             <button
               type="button"
@@ -282,7 +285,7 @@ export default function ContentIdWhitelistPage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
             >
               {syncingInfo ? <Loader2 size={17} className="animate-spin" /> : <RefreshCw size={17} />}
-              Sync Channel Info
+              {t("Sync Channel Info")}
             </button>
             <button
               type="button"
@@ -290,7 +293,7 @@ export default function ContentIdWhitelistPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white hover:bg-blue-700"
             >
               <Plus size={17} />
-              Add
+              {t("Add")}
             </button>
             <button
               type="button"
@@ -299,12 +302,12 @@ export default function ContentIdWhitelistPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-red-50 px-4 py-3 text-sm font-black text-red-600 hover:bg-red-100 disabled:opacity-50"
             >
               {deleting ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}
-              Delete selected ({selected.length})
+              {t("Delete selected ({count})", { count: selected.length })}
             </button>
           </div>
         </div>
-        {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{message}</div>}
-        {error && <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600">{error}</div>}
+        {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{tm(message)}</div>}
+        {error && <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600">{tm(error)}</div>}
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -315,7 +318,7 @@ export default function ContentIdWhitelistPage() {
               onChange={(event) => setNetworkId(event.target.value)}
               className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
             >
-              <option value="">All CMS networks</option>
+              <option value="">{t("All CMS networks")}</option>
               {networks.map((network) => (
                 <option key={network.id} value={network.id}>{network.name}</option>
               ))}
@@ -325,7 +328,7 @@ export default function ContentIdWhitelistPage() {
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search channel name, channel ID, CMS..."
+                placeholder={t("Search channel name, channel ID, CMS...")}
                 className="w-full bg-transparent text-sm outline-none"
               />
             </label>
@@ -336,7 +339,7 @@ export default function ContentIdWhitelistPage() {
             className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50"
           >
             <RefreshCw size={16} />
-            Refresh
+            {t("Refresh")}
           </button>
         </div>
 
@@ -347,13 +350,13 @@ export default function ContentIdWhitelistPage() {
                 <th className="w-12 px-4 py-4">
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                 </th>
-                <th className="px-4 py-4">Channel</th>
+                <th className="px-4 py-4">{t("Channel")}</th>
                 <th className="px-4 py-4">CMS</th>
-                <th className="px-4 py-4"><SortHeader label="Views" field="view_count" /></th>
-                <th className="px-4 py-4"><SortHeader label="Subs" field="subscriber_count" /></th>
-                <th className="px-4 py-4"><SortHeader label="Videos" field="video_count" /></th>
-                <th className="px-4 py-4">Synced</th>
-                <th className="px-4 py-4 text-right">Action</th>
+                <th className="px-4 py-4"><SortHeader label={t("Views")} field="view_count" /></th>
+                <th className="px-4 py-4"><SortHeader label={t("Subs")} field="subscriber_count" /></th>
+                <th className="px-4 py-4"><SortHeader label={t("Videos")} field="video_count" /></th>
+                <th className="px-4 py-4">{t("Synced")}</th>
+                <th className="px-4 py-4 text-right">{t("Action")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -361,7 +364,7 @@ export default function ContentIdWhitelistPage() {
                 <tr>
                   <td colSpan="8" className="px-4 py-12 text-center text-slate-500">
                     <Loader2 className="mx-auto mb-2 animate-spin" />
-                    Loading whitelist...
+                    {t("Loading whitelist...")}
                   </td>
                 </tr>
               ) : sortedRows.length ? sortedRows.map((row) => (
@@ -392,14 +395,14 @@ export default function ContentIdWhitelistPage() {
                           rel="noreferrer"
                           className="block truncate font-black text-slate-950 hover:text-blue-600"
                         >
-                          {row.channel_title || "Waiting for YouTube data"}
+                          {row.channel_title || t("Waiting for YouTube data")}
                         </a>
                         <span className="mt-1 flex items-center gap-1">
                           <span className="truncate font-mono text-xs text-slate-500">{row.channel_id}</span>
                           <button
                             type="button"
                             onClick={() => copyChannelId(row.channel_id)}
-                            title="Copy channel ID"
+                            title={t("Copy channel ID")}
                             className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
                           >
                             <Copy size={12} />
@@ -422,14 +425,14 @@ export default function ContentIdWhitelistPage() {
                       className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-100 disabled:opacity-50"
                     >
                       <Trash2 size={14} />
-                      Delete
+                      {t("Delete")}
                     </button>
                   </td>
                 </tr>
               )) : (
                 <tr>
                   <td colSpan="8" className="px-4 py-12 text-center text-slate-500">
-                    No whitelist channel yet. Sync CMS whitelist or add channels.
+                    {t("No whitelist channel yet. Sync CMS whitelist or add channels.")}
                   </td>
                 </tr>
               )}
@@ -443,8 +446,8 @@ export default function ContentIdWhitelistPage() {
           <form onSubmit={handleAdd} className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
               <div>
-                <h2 className="text-2xl font-black text-slate-950">Add channels to whitelist</h2>
-                <p className="text-sm text-slate-500">Paste channel IDs, handles, or YouTube channel links. One per line.</p>
+                <h2 className="text-2xl font-black text-slate-950">{t("Add channels to whitelist")}</h2>
+                <p className="text-sm text-slate-500">{t("Paste channel IDs, handles, or YouTube channel links. One per line.")}</p>
               </div>
               <button type="button" onClick={() => setAddOpen(false)} className="rounded-2xl border border-slate-200 p-3 text-slate-500 hover:bg-slate-50">
                 <X size={20} />
@@ -452,7 +455,7 @@ export default function ContentIdWhitelistPage() {
             </div>
             <div className="space-y-4 p-5">
               <label className="block">
-                <span className="text-xs font-black uppercase tracking-wide text-slate-400">CMS network</span>
+                <span className="text-xs font-black uppercase tracking-wide text-slate-400">{t("CMS network")}</span>
                 <select
                   value={addNetworkId}
                   onChange={(event) => setAddNetworkId(event.target.value)}
@@ -464,23 +467,23 @@ export default function ContentIdWhitelistPage() {
                 </select>
               </label>
               <label className="block">
-                <span className="text-xs font-black uppercase tracking-wide text-slate-400">Channels</span>
+                <span className="text-xs font-black uppercase tracking-wide text-slate-400">{t("Channels")}</span>
                 <textarea
                   value={channelText}
                   onChange={(event) => setChannelText(event.target.value)}
                   rows={8}
-                  placeholder={"UCxxxxxxxxxxxxxxxxxxxxxx\n@mychannel\nhttps://www.youtube.com/channel/UC..."}
+                  placeholder={t("UCxxxxxxxxxxxxxxxxxxxxxx\n@mychannel\nhttps://www.youtube.com/channel/UC...")}
                   className="mt-2 w-full rounded-2xl border border-slate-200 p-4 outline-none focus:border-blue-500"
                 />
               </label>
             </div>
             <div className="flex justify-end gap-3 border-t border-slate-100 p-5">
               <button type="button" onClick={() => setAddOpen(false)} className="rounded-2xl border border-slate-200 px-5 py-3 font-black text-slate-700">
-                Cancel
+                {t("Cancel")}
               </button>
               <button type="submit" disabled={adding} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white hover:bg-blue-700 disabled:opacity-60">
                 {adding ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                Add to whitelist
+                {t("Add to whitelist")}
               </button>
             </div>
           </form>

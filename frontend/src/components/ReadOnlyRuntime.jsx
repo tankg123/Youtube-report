@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useI18n } from "../context/I18nContext";
+import { t } from "../i18n/index.js";
 
+// Matched as lowercase substrings of a control's text + aria-label + title + value (see isActionControl):
+// English verbs first, then the Vietnamese verbs the bilingual dictionaries render on the same buttons.
 const ACTION_WORDS = [
   "add",
   "create",
@@ -45,6 +49,40 @@ const ACTION_WORDS = [
   "xoá bảng"
 ];
 
+// Verbs matched only at the START of a control's text (after an optional icon / count), in both languages:
+// a substring match would also lock status chips and filters that merely contain the word ("Đã gỡ",
+// "Đang chạy", "Released", "Running"). Imperative buttons begin with their verb.
+const ACTION_PREFIXES = [
+  "release",
+  "reinstate",
+  "activate",
+  "re-check",
+  "recheck",
+  "retry",
+  "deliver",
+  "run",
+  "start",
+  "stop",
+  "send",
+  "gỡ",
+  "khôi phục",
+  "xác nhận",
+  "kích hoạt",
+  "kiểm tra lại",
+  "thử lại",
+  "phân phối",
+  "tải lên",
+  "tải xuống",
+  "gửi",
+  "chạy",
+  "bắt đầu",
+  "dừng",
+  "bật",
+  "tắt",
+  "thiết lập",
+  "bỏ chọn"
+];
+
 const ALLOW_EXACT = new Set([
   "close",
   "cancel",
@@ -81,7 +119,21 @@ const ALLOW_EXACT = new Set([
   "xem",
   "làm mới",
   "lọc",
-  "đăng xuất"
+  "đăng xuất",
+  "đặt lại",
+  "bộ lọc",
+  "sắp xếp",
+  "sao chép",
+  "cài đặt hồ sơ",
+  "đổi mật khẩu",
+  "xác thực hai lớp",
+  "tạo mã qr",
+  "bật 2fa",
+  "tắt 2fa",
+  "sáng",
+  "tối",
+  "phân phối lên cms",
+  "phân phối video"
 ]);
 
 const ACTION_ICON_HINTS = [
@@ -106,6 +158,13 @@ function normalize(value) {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+// "gỡ claim đã chọn" and "+ release 3 claims" start with a verb; "đã gỡ" or "released" do not. A verb must be
+// followed by the end of the text or a non-letter so "run" does not match "running" and "gỡ" not "gỡi".
+function startsWithActionVerb(label) {
+  const text = label.replace(/^[^\p{L}\p{N}]+/u, "").replace(/^\d+\s*/, "");
+  return ACTION_PREFIXES.some((verb) => text === verb || (text.startsWith(verb) && !/\p{L}/u.test(text.charAt(verb.length))));
+}
+
 function labelFor(element) {
   return normalize([
     element.innerText,
@@ -126,11 +185,12 @@ function isActionControl(element) {
   }
 
   if (ACTION_WORDS.some((word) => label.includes(word))) return true;
+  if (startsWithActionVerb(label)) return true;
 
   const html = normalize(element.innerHTML);
   if (!label && ACTION_ICON_HINTS.some((hint) => html.includes(hint))) return true;
   if (label && ACTION_ICON_HINTS.some((hint) => html.includes(hint)) && !ALLOW_EXACT.has(label)) {
-    return ACTION_WORDS.some((word) => label.includes(word));
+    return ACTION_WORDS.some((word) => label.includes(word)) || startsWithActionVerb(label);
   }
 
   if (element.tagName === "A" && element.hasAttribute("download")) return true;
@@ -155,7 +215,7 @@ function lockElement(element) {
     element.setAttribute("aria-disabled", "true");
   }
 
-  element.setAttribute("title", "Read only mode: this action is disabled");
+  element.setAttribute("title", t("Read only mode: this action is disabled"));
   element.classList.add("read-only-action-disabled");
 }
 
@@ -205,6 +265,8 @@ function clearReadOnlyLock() {
 
 export default function ReadOnlyRuntime() {
   const { isReadOnly } = useAuth();
+  // language: a toggle unlocks and re-locks the controls so the injected title follows the UI language.
+  const { language } = useI18n();
 
   useEffect(() => {
     if (!isReadOnly) {
@@ -232,7 +294,7 @@ export default function ReadOnlyRuntime() {
       document.body.classList.remove("read-only-mode");
       clearReadOnlyLock();
     };
-  }, [isReadOnly]);
+  }, [isReadOnly, language]);
 
   return null;
 }

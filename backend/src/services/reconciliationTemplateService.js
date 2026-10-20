@@ -522,12 +522,27 @@ function findItemsTemplateRow(ws) {
   return found;
 }
 
-const REVENUE_TAX_EXPORT_COLUMNS = [
-  { header: "Revenue US", placeholder: "${table.items.revenue_us}" },
-  { header: "Tax US", placeholder: "${table.items.tax_us}" },
-  { header: "Revenue BR", placeholder: "${table.items.revenue_br}" },
-  { header: "Tax BR", placeholder: "${table.items.tax_br}" }
-];
+// Revenue / Tax column pair of each withholding kind; only the kinds switched on in Settings are exported.
+const REVENUE_TAX_EXPORT_COLUMNS = Object.freeze({
+  us: [
+    { header: "Revenue US", placeholder: "${table.items.revenue_us}" },
+    { header: "Tax US", placeholder: "${table.items.tax_us}" }
+  ],
+  br: [
+    { header: "Revenue BR", placeholder: "${table.items.revenue_br}" },
+    { header: "Tax BR", placeholder: "${table.items.tax_br}" }
+  ]
+});
+
+// The columns an export asked for: export_tax_us / export_tax_br pick the kinds; the pre-split export_us_br
+// (or exportUsBr) alone means both kinds.
+function revenueTaxExportColumns(options = {}) {
+  const hasKindFlags = options.export_tax_us !== undefined || options.export_tax_br !== undefined;
+  const both = Boolean(options.export_us_br || options.exportUsBr);
+  const includeUs = hasKindFlags ? Boolean(options.export_tax_us) : both;
+  const includeBr = hasKindFlags ? Boolean(options.export_tax_br) : both;
+  return [...(includeUs ? REVENUE_TAX_EXPORT_COLUMNS.us : []), ...(includeBr ? REVENUE_TAX_EXPORT_COLUMNS.br : [])];
+}
 
 function isMergeSlaveCell(cell) {
   return cell.type === ExcelJS.ValueType.Merge;
@@ -566,11 +581,12 @@ function lastValueColumn(row) {
   return last;
 }
 
-// Inserts Revenue US / Tax US / Revenue BR / Tax BR right after the "total_usd" columns of the items table and
-// shifts the remaining table columns (share rate, payout, note) to the right. The table block is the group header,
-// header, formula hint and item template rows plus the spacer and sum rows right under the template, so the
-// border grid stays continuous.
-function insertRevenueTaxExportColumns(ws, templateRow) {
+// Inserts the Revenue / Tax columns of the exported kinds (see revenueTaxExportColumns) right after the
+// "total_usd" columns of the items table and shifts the remaining table columns (share rate, payout, note) to the
+// right. The table block is the group header, header, formula hint and item template rows plus the spacer and sum
+// rows right under the template, so the border grid stays continuous.
+function insertRevenueTaxExportColumns(ws, templateRow, columns) {
+  if (!columns || !columns.length) return null;
   const template = ws.getRow(templateRow);
   let totalStartCol = null;
   let totalEndCol = null;
@@ -585,7 +601,7 @@ function insertRevenueTaxExportColumns(ws, templateRow) {
   if (totalStartCol == null || totalEndCol == null) return null;
 
   const insertAt = totalEndCol + 1;
-  const insertedColumnCount = REVENUE_TAX_EXPORT_COLUMNS.length;
+  const insertedColumnCount = columns.length;
   const headerGroupRow = templateRow - 3;
   const headerRow = templateRow - 2;
   const formulaRow = templateRow - 1;
@@ -619,7 +635,7 @@ function insertRevenueTaxExportColumns(ws, templateRow) {
     }
   }
 
-  REVENUE_TAX_EXPORT_COLUMNS.forEach((column, index) => {
+  columns.forEach((column, index) => {
     const col = insertAt + index;
     ws.getColumn(col).width = 14;
 
@@ -831,7 +847,8 @@ async function generateGroupReconciliationExcel(detail, company, options = {}) {
     ws.name = safeStr(detail.partner_name || detail.group_name || "Reconciliation").slice(0, 31) || "Reconciliation";
     if (language === "en") applyEnglishStaticText(ws);
     const templateRow = findItemsTemplateRow(ws);
-    const includeRevenueTaxColumns = Boolean(options.export_us_br || options.exportUsBr);
+    const taxColumns = revenueTaxExportColumns(options);
+    const includeRevenueTaxColumns = taxColumns.length > 0;
     let taxColumnState = null;
     const items = payload.table.items.length > 0
       ? payload.table.items
@@ -851,7 +868,7 @@ async function generateGroupReconciliationExcel(detail, company, options = {}) {
         }];
 
     if (templateRow) {
-      if (includeRevenueTaxColumns) taxColumnState = insertRevenueTaxExportColumns(ws, templateRow);
+      if (includeRevenueTaxColumns) taxColumnState = insertRevenueTaxExportColumns(ws, templateRow, taxColumns);
       if (taxColumnState) {
         // The wider table no longer fits the template's fixed 70% landscape scale; fit it to one page width.
         ws.pageSetup.fitToPage = true;
@@ -894,5 +911,7 @@ async function generateGroupReconciliationExcel(detail, company, options = {}) {
 }
 
 module.exports = {
-  generateGroupReconciliationExcel
+  generateGroupReconciliationExcel,
+  revenueTaxExportColumns,
+  REVENUE_TAX_EXPORT_COLUMNS
 };

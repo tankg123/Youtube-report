@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, FileAudio, Loader2, PackageSearch, Plus, Trash2, TriangleAlert, Upload } from "lucide-react";
 import api from "../api/api";
+import { useI18n } from "../context/I18nContext";
+import { tk } from "../i18n/index.js";
 
 const GENRES = [
   "Pop", "Rock", "Hip-Hop", "Guitar", "Piano", "R&B", "Electronic", "Dance", "Jazz", "Classical",
@@ -10,11 +12,12 @@ const GENRES = [
   "Chill", "Instrumental", "Acoustic", "Hard Rock", "Progressive Rock", "EDM", "Reggaeton", "Bolero"
 ];
 
+// CSV values YouTube expects (kept English in the data); the <option> labels are rendered with t(policy).
 const MATCH_POLICIES = [
-  "Monetize in all countries",
-  "Track in all countries",
-  "Block in all countries",
-  "Manual Review"
+  tk("Monetize in all countries"),
+  tk("Track in all countries"),
+  tk("Block in all countries"),
+  tk("Manual Review")
 ];
 
 const emptyRow = (filename = "") => ({
@@ -77,6 +80,7 @@ function formatMegabytes(bytes) {
 }
 
 export default function ContentIdCreatorPage() {
+  const { t, tm } = useI18n();
   const [rows, setRows] = useState([]);
   const [labels, setLabels] = useState([]);
   const [message, setMessage] = useState("");
@@ -153,7 +157,7 @@ export default function ContentIdCreatorPage() {
       .map((file) => emptyRow(file.name));
 
     setRows((current) => [...current, ...audioRows]);
-    setMessage(`Loaded ${audioRows.length} audio files`);
+    setMessage(t("Loaded {count} audio files", { count: audioRows.length }));
   }
 
   function clearAll() {
@@ -172,7 +176,7 @@ export default function ContentIdCreatorPage() {
 
   async function fillCodes(type) {
     if (!rows.length) {
-      setMessage("Add rows before taking codes.");
+      setMessage(tk("Add rows before taking codes."));
       return;
     }
 
@@ -181,9 +185,11 @@ export default function ContentIdCreatorPage() {
     const codes = res.data.codes || [];
 
     if (codes.length < count) {
-      setMessage(`Only ${codes.length}/${count} unused ${type} codes are available.`);
+      setMessage(t("Only {available}/{count} unused {type} codes are available.", { available: codes.length, count, type }));
     } else {
-      setMessage(`Filled ${codes.length} ${type} code${codes.length > 1 ? "s" : ""}.`);
+      setMessage(codes.length > 1
+        ? t("Filled {count} {type} codes.", { count: codes.length, type })
+        : t("Filled {count} {type} code.", { count: codes.length, type }));
     }
 
     setRows((current) => current.map((row, index) => {
@@ -195,7 +201,7 @@ export default function ContentIdCreatorPage() {
   function pasteField(source, field) {
     const lines = String(source || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     setRows((current) => current.map((row, index) => lines[index] ? { ...row, [field]: lines[index] } : row));
-    setMessage(`Pasted ${lines.length} values into ${field}`);
+    setMessage(t("Pasted {count} values into {field}", { count: lines.length, field }));
   }
 
   function updateImportOption(field, value) {
@@ -206,7 +212,7 @@ export default function ContentIdCreatorPage() {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("Could not read the CSV file."));
+      reader.onerror = () => reject(new Error(tk("Could not read the CSV file.")));
       reader.readAsText(file, "utf-8");
     });
   }
@@ -218,7 +224,7 @@ export default function ContentIdCreatorPage() {
 
     try {
       setAnalyzing(true);
-      setImportMessage(`Reading ${file.name}...`);
+      setImportMessage(t("Reading {file}...", { file: file.name }));
       const text = await readFileAsText(file);
       const res = await api.post("/content-id/product-track/analyze", { csv: text }, { timeout: 120000 });
       const albums = res.data.albums || [];
@@ -228,13 +234,16 @@ export default function ContentIdCreatorPage() {
       setImportAlbums(albums);
       setImportSummary(res.data.summary || null);
       setSelectedKeys(albums.map((album) => album.key));
-      setImportMessage(`Found ${albums.length} album${albums.length === 1 ? "" : "s"} and ${res.data.summary?.track_count || 0} tracks in ${file.name}.`);
+      const foundParams = { albums: albums.length, tracks: res.data.summary?.track_count || 0, file: file.name };
+      setImportMessage(albums.length === 1
+        ? t("Found {albums} album and {tracks} tracks in {file}.", foundParams)
+        : t("Found {albums} albums and {tracks} tracks in {file}.", foundParams));
     } catch (error) {
       setImportCsv("");
       setImportAlbums([]);
       setImportSummary(null);
       setSelectedKeys([]);
-      setImportMessage(error.response?.data?.message || error.message || "Could not read this report.");
+      setImportMessage(error.response?.data?.message || error.message || tk("Could not read this report."));
     } finally {
       setAnalyzing(false);
     }
@@ -273,18 +282,18 @@ export default function ContentIdCreatorPage() {
 
   async function downloadPackage(keys, busyKey, label) {
     if (!importCsv) {
-      setImportMessage("Please import a ProductTrack report first.");
+      setImportMessage(tk("Please import a ProductTrack report first."));
       return;
     }
     if (!keys.length) {
-      setImportMessage("Please select at least one album.");
+      setImportMessage(tk("Please select at least one album."));
       return;
     }
 
     try {
       setPackagingKey(busyKey);
       setPackagingProgress(0);
-      setImportMessage(`Preparing ${label}. Downloading audio and artwork from the media server, this can take a few minutes...`);
+      setImportMessage(t("Preparing {label}. Downloading audio and artwork from the media server, this can take a few minutes...", { label }));
 
       const res = await api.post(
         "/content-id/product-track/package",
@@ -300,10 +309,10 @@ export default function ContentIdCreatorPage() {
       downloadBlob(res.data, headerFileName || "content-id-package.zip", "application/zip");
       const skipped = Number(res.headers?.["x-package-skipped"] || 0);
       setImportMessage(skipped
-        ? `Downloaded ${label} (${formatMegabytes(res.data.size)}). ${skipped} file(s) could not be fetched - see README-missing-files.txt inside the ZIP.`
-        : `Downloaded ${label} (${formatMegabytes(res.data.size)}).`);
+        ? t("Downloaded {label} ({size}). {skipped} file(s) could not be fetched - see README-missing-files.txt inside the ZIP.", { label, size: formatMegabytes(res.data.size), skipped })
+        : t("Downloaded {label} ({size}).", { label, size: formatMegabytes(res.data.size) }));
     } catch (error) {
-      setImportMessage(await packageErrorMessage(error, `Could not build the package for ${label}`));
+      setImportMessage(await packageErrorMessage(error, t("Could not build the package for {label}", { label })));
     } finally {
       setPackagingKey("");
       setPackagingProgress(0);
@@ -316,11 +325,11 @@ export default function ContentIdCreatorPage() {
     const albumArtist = meta.album_artist.trim();
     const albumArtFileName = meta.album_art_filename.trim();
 
-    if (!rows.length) throw new Error("No tracks to export.");
-    if (!genre) throw new Error("Please select genre.");
-    if (!releaseDate) throw new Error("Please select release date.");
-    if (!albumArtist) throw new Error("Please enter album artist.");
-    if (!albumArtFileName) throw new Error("Please choose album art filename.");
+    if (!rows.length) throw new Error(tk("No tracks to export."));
+    if (!genre) throw new Error(tk("Please select genre."));
+    if (!releaseDate) throw new Error(tk("Please select release date."));
+    if (!albumArtist) throw new Error(tk("Please enter album artist."));
+    if (!albumArtFileName) throw new Error(tk("Please choose album art filename."));
 
     const headers1 = ["filename", "isrc", "add_asset_labels", "song_title", "artist", "album", "upc", "genre", "label", "original_release_date", "ownership", "match_policy", "custom_id"];
     const headers2 = [
@@ -336,7 +345,7 @@ export default function ContentIdCreatorPage() {
 
     rows.forEach((row, index) => {
       ["filename", "isrc", "song_title", "artist", "album", "upc", "label", "ownership"].forEach((field) => {
-        if (!String(row[field] || "").trim()) throw new Error(`Row ${index + 1}: ${field} is required.`);
+        if (!String(row[field] || "").trim()) throw new Error(t("Row {row}: {field} is required.", { row: index + 1, field }));
       });
 
       const asset = row.label;
@@ -394,16 +403,16 @@ export default function ContentIdCreatorPage() {
       const cleanAlbum = removeVietnameseTones(albumTitle).replace(/[^a-zA-Z0-9]/g, "") || "output";
       downloadCsv(soundRecordings, `${cleanAlbum}-SoundRecordings.csv`);
       downloadCsv(artTrack, `${cleanAlbum}-ArtTrack.csv`);
-      setMessage("Product saved. CSV files downloaded.");
+      setMessage(tk("Product saved. CSV files downloaded."));
     } catch (error) {
-      setMessage(error.response?.data?.message || error.message || "Export failed");
+      setMessage(error.response?.data?.message || error.message || tk("Export failed"));
     } finally {
       setSaving(false);
     }
   }
 
   function exportTitles() {
-    const data = [["STT", "Ten Bai Hat"], ...rows.map((row, index) => [index + 1, row.song_title])];
+    const data = [[t("No."), t("Song title")], ...rows.map((row, index) => [index + 1, row.song_title])];
     downloadCsv(data, "DanhSachBaiHat.csv");
   }
 
@@ -415,48 +424,48 @@ export default function ContentIdCreatorPage() {
             <p className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
               <FileAudio size={14} /> Content ID
             </p>
-            <h1 className="mt-3 text-3xl font-black text-slate-950">Creator Soundrecording & Art</h1>
-            <p className="mt-1 text-sm text-slate-500">Create YouTube CMS SoundRecordings and ArtTrack CSV files from stored ISRC/UPC codes.</p>
+            <h1 className="mt-3 text-3xl font-black text-slate-950">{t("Creator Soundrecording & Art")}</h1>
+            <p className="mt-1 text-sm text-slate-500">{t("Create YouTube CMS SoundRecordings and ArtTrack CSV files from stored ISRC/UPC codes.")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white">
-              Choose music folder
+              {t("Choose music folder")}
               <input type="file" multiple webkitdirectory="" className="hidden" onChange={loadFilenames} />
             </label>
             <button onClick={() => addRow()} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white">
-              <Plus size={17} /> Add row
+              <Plus size={17} /> {t("Add row")}
             </button>
-            <button onClick={clearAll} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">Clear</button>
+            <button onClick={clearAll} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">{t("Clear")}</button>
           </div>
         </div>
 
-        {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{message}</div>}
+        {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{tm(message)}</div>}
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <button onClick={() => fillCodes("ISRC")} className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700">Get ISRC from backend</button>
-          <button onClick={() => fillCodes("UPC")} className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700">Get UPC from backend</button>
-          <button onClick={exportTitles} disabled={!rows.length} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700 disabled:opacity-50">Export song titles CSV</button>
+          <button onClick={() => fillCodes("ISRC")} className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700">{t("Get ISRC from backend")}</button>
+          <button onClick={() => fillCodes("UPC")} className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700">{t("Get UPC from backend")}</button>
+          <button onClick={exportTitles} disabled={!rows.length} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700 disabled:opacity-50">{t("Export song titles CSV")}</button>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <select value={meta.match_policy} onChange={(event) => updateMeta("match_policy", event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3">
-            {MATCH_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}
+            {MATCH_POLICIES.map((policy) => <option key={policy} value={policy}>{t(policy)}</option>)}
           </select>
           <input type="date" value={meta.release_date} onChange={(event) => updateMeta("release_date", event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3" />
           <select value={meta.genre} onChange={(event) => updateMeta("genre", event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3">
-            <option value="">Select genre</option>
+            <option value="">{t("Select genre")}</option>
             {GENRES.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
           </select>
           <input value={meta.ddex_party_id} onChange={(event) => updateMeta("ddex_party_id", event.target.value)} placeholder="ddex_party_id" className="rounded-2xl border border-slate-200 px-4 py-3" />
           <input value={meta.album_artist} onChange={(event) => updateMeta("album_artist", event.target.value)} placeholder="album_artist" className="rounded-2xl border border-slate-200 px-4 py-3" />
           <select value={rows[0]?.label || ""} onChange={(event) => applyLabel(event.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3">
-            <option value="">Select label</option>
+            <option value="">{t("Select label")}</option>
             {labels.map((label) => (
               <option key={label.id} value={label.name}>{label.display_name || label.name}</option>
             ))}
           </select>
           <label className="rounded-2xl border border-slate-200 px-4 py-3 text-slate-500">
-            {meta.album_art_filename || "Choose album art filename"}
+            {meta.album_art_filename || t("Choose album art filename")}
             <input
               type="file"
               accept=".png,.jpg,.jpeg"
@@ -471,30 +480,29 @@ export default function ContentIdCreatorPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">
-              <PackageSearch size={14} /> Import ProductTrack report
+              <PackageSearch size={14} /> {t("Import ProductTrack report")}
             </p>
-            <h2 className="mt-3 text-2xl font-black text-slate-950">Build album packages from a report</h2>
+            <h2 className="mt-3 text-2xl font-black text-slate-950">{t("Build album packages from a report")}</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Import a ProductTrack CSV export. Each album is packaged into a ZIP with its audio files, artwork and the
-              SoundRecordings + ArtTrack CSV files already filled in from the report.
+              {t("Import a ProductTrack CSV export. Each album is packaged into a ZIP with its audio files, artwork and the SoundRecordings + ArtTrack CSV files already filled in from the report.")}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <label className={`inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white ${analyzing ? "opacity-60" : "cursor-pointer"}`}>
               {analyzing ? <Loader2 size={17} className="animate-spin" /> : <Upload size={17} />}
-              {analyzing ? "Reading..." : "Import report CSV"}
+              {analyzing ? t("Reading...") : t("Import report CSV")}
               <input type="file" accept=".csv,text/csv" className="hidden" disabled={analyzing} onChange={analyzeReport} />
             </label>
             {importAlbums.length > 0 && (
-              <button onClick={clearImport} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">Clear import</button>
+              <button onClick={clearImport} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">{t("Clear import")}</button>
             )}
           </div>
         </div>
 
         {importMessage && (
           <div className="mt-4 rounded-2xl bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-700">
-            {importMessage}
-            {packagingKey && packagingProgress > 0 && ` (${formatMegabytes(packagingProgress)} received)`}
+            {tm(importMessage)}
+            {packagingKey && packagingProgress > 0 && ` ${t("({size} received)", { size: formatMegabytes(packagingProgress) })}`}
           </div>
         )}
 
@@ -502,7 +510,7 @@ export default function ContentIdCreatorPage() {
           <>
             <div className="mt-5 grid gap-3 md:grid-cols-3">
               <label className="rounded-2xl border border-slate-200 px-4 py-3">
-                <span className="block text-xs font-black uppercase text-slate-400">Ownership</span>
+                <span className="block text-xs font-black uppercase text-slate-400">{t("Ownership")}</span>
                 <input
                   value={importOptions.ownership}
                   onChange={(event) => updateImportOption("ownership", event.target.value)}
@@ -511,13 +519,13 @@ export default function ContentIdCreatorPage() {
                 />
               </label>
               <label className="rounded-2xl border border-slate-200 px-4 py-3">
-                <span className="block text-xs font-black uppercase text-slate-400">Match policy</span>
+                <span className="block text-xs font-black uppercase text-slate-400">{t("Match policy")}</span>
                 <select
                   value={importOptions.match_policy}
                   onChange={(event) => updateImportOption("match_policy", event.target.value)}
                   className="mt-1 w-full bg-transparent text-sm font-bold text-slate-900 outline-none"
                 >
-                  {MATCH_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}
+                  {MATCH_POLICIES.map((policy) => <option key={policy} value={policy}>{t(policy)}</option>)}
                 </select>
               </label>
               <label className="rounded-2xl border border-slate-200 px-4 py-3">
@@ -525,7 +533,7 @@ export default function ContentIdCreatorPage() {
                 <input
                   value={importOptions.ddex_party_id}
                   onChange={(event) => updateImportOption("ddex_party_id", event.target.value)}
-                  placeholder="Optional"
+                  placeholder={t("Optional")}
                   className="mt-1 w-full text-sm font-bold text-slate-900 outline-none"
                 />
               </label>
@@ -534,29 +542,29 @@ export default function ContentIdCreatorPage() {
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-black text-slate-600">
               <label className="inline-flex items-center gap-2">
                 <input type="checkbox" checked={importOptions.include_audio} onChange={(event) => updateImportOption("include_audio", event.target.checked)} />
-                Include audio files
+                {t("Include audio files")}
               </label>
               <label className="inline-flex items-center gap-2">
                 <input type="checkbox" checked={importOptions.include_artwork} onChange={(event) => updateImportOption("include_artwork", event.target.checked)} />
-                Include artwork
+                {t("Include artwork")}
               </label>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importFileName}</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importSummary?.album_count || 0} albums</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importSummary?.track_count || 0} tracks</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{importSummary?.downloadable_tracks || 0} audio links</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{t("{count} albums", { count: importSummary?.album_count || 0 })}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{t("{count} tracks", { count: importSummary?.track_count || 0 })}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{t("{count} audio links", { count: importSummary?.downloadable_tracks || 0 })}</span>
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
               <button onClick={toggleAllAlbums} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">
-                {selectedKeys.length === importAlbums.length ? "Unselect all" : "Select all"}
+                {selectedKeys.length === importAlbums.length ? t("Unselect all") : t("Select all")}
               </button>
               <button
-                onClick={() => downloadPackage(selectedKeys, "selected", `${selectedKeys.length} album${selectedKeys.length === 1 ? "" : "s"}`)}
+                onClick={() => downloadPackage(selectedKeys, "selected", selectedKeys.length === 1 ? t("{count} album", { count: selectedKeys.length }) : t("{count} albums", { count: selectedKeys.length }))}
                 disabled={!selectedKeys.length || Boolean(packagingKey)}
                 className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
               >
                 {packagingKey === "selected" ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />}
-                Download selected ({selectedKeys.length})
+                {t("Download selected ({count})", { count: selectedKeys.length })}
               </button>
             </div>
 
@@ -589,7 +597,7 @@ export default function ContentIdCreatorPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-black text-slate-950" title={album.album_title}>{album.album_title}</p>
                       <p className="mt-0.5 truncate text-xs font-bold text-slate-500">
-                        {album.album_upc || "No UPC"} - {album.track_count} track{album.track_count === 1 ? "" : "s"}
+                        {album.album_upc || t("No UPC")} - {album.track_count === 1 ? t("{count} track", { count: album.track_count }) : t("{count} tracks", { count: album.track_count })}
                       </p>
                       <p className="mt-0.5 truncate text-xs text-slate-500">{album.album_artist} - {album.label}</p>
                       <p className="mt-0.5 truncate text-xs text-slate-400">{album.genre} - {album.release_date}</p>
@@ -602,13 +610,13 @@ export default function ContentIdCreatorPage() {
                         {track.track_number}. {track.song_title} <span className="text-slate-400">{track.isrc}</span>
                       </li>
                     ))}
-                    {album.track_count > 4 && <li className="text-slate-400">+{album.track_count - 4} more</li>}
+                    {album.track_count > 4 && <li className="text-slate-400">{t("+{count} more", { count: album.track_count - 4 })}</li>}
                   </ul>
 
                   {album.warnings.length > 0 && (
                     <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
                       <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-                      <span>{album.warnings.join(" ")}</span>
+                      <span>{album.warnings.map((warning) => tm(warning)).join(" ")}</span>
                     </div>
                   )}
 
@@ -618,7 +626,7 @@ export default function ContentIdCreatorPage() {
                     className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
                   >
                     {packagingKey === album.key ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    {packagingKey === album.key ? "Packaging..." : "Download album ZIP"}
+                    {packagingKey === album.key ? t("Packaging...") : t("Download album ZIP")}
                   </button>
                 </div>
               ))}
@@ -629,27 +637,27 @@ export default function ContentIdCreatorPage() {
 
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-3xl border border-slate-200 bg-white p-4">
-          <textarea value={bulk.isrc} onChange={(event) => setBulk((current) => ({ ...current, isrc: event.target.value }))} rows={4} placeholder="Paste ISRC, one per line" className="w-full rounded-2xl border border-slate-200 p-3" />
-          <button onClick={() => pasteField(bulk.isrc, "isrc")} className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white">Paste ISRC</button>
+          <textarea value={bulk.isrc} onChange={(event) => setBulk((current) => ({ ...current, isrc: event.target.value }))} rows={4} placeholder={t("Paste ISRC, one per line")} className="w-full rounded-2xl border border-slate-200 p-3" />
+          <button onClick={() => pasteField(bulk.isrc, "isrc")} className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white">{t("Paste ISRC")}</button>
         </div>
         <div className="rounded-3xl border border-slate-200 bg-white p-4">
-          <textarea value={bulk.title} onChange={(event) => setBulk((current) => ({ ...current, title: event.target.value }))} rows={4} placeholder="Paste song titles, one per line" className="w-full rounded-2xl border border-slate-200 p-3" />
-          <button onClick={() => pasteField(bulk.title, "song_title")} className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white">Paste titles</button>
+          <textarea value={bulk.title} onChange={(event) => setBulk((current) => ({ ...current, title: event.target.value }))} rows={4} placeholder={t("Paste song titles, one per line")} className="w-full rounded-2xl border border-slate-200 p-3" />
+          <button onClick={() => pasteField(bulk.title, "song_title")} className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white">{t("Paste titles")}</button>
         </div>
         <div className="rounded-3xl border border-slate-200 bg-white p-4">
-          <textarea value={bulk.artist} onChange={(event) => setBulk((current) => ({ ...current, artist: event.target.value }))} rows={4} placeholder="Paste artists, one per line. Use comma or semicolon for multiple artists." className="w-full rounded-2xl border border-slate-200 p-3" />
-          <button onClick={() => pasteField(bulk.artist, "artist")} className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white">Paste artists</button>
+          <textarea value={bulk.artist} onChange={(event) => setBulk((current) => ({ ...current, artist: event.target.value }))} rows={4} placeholder={t("Paste artists, one per line. Use comma or semicolon for multiple artists.")} className="w-full rounded-2xl border border-slate-200 p-3" />
+          <button onClick={() => pasteField(bulk.artist, "artist")} className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white">{t("Paste artists")}</button>
         </div>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
-          <h2 className="text-lg font-black text-slate-950">{rows.length} tracks</h2>
+          <h2 className="text-lg font-black text-slate-950">{t("{count} tracks", { count: rows.length })}</h2>
           <div className="flex flex-wrap items-center gap-2 text-xs font-black">
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Missing ISRC: {stats.missingIsrc}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Missing UPC: {stats.missingUpc}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{t("Missing ISRC: {count}", { count: stats.missingIsrc })}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{t("Missing UPC: {count}", { count: stats.missingUpc })}</span>
             <button onClick={exportCsvAndSave} disabled={!canExport || saving} className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50">
-              <Download size={17} /> {saving ? "Saving..." : "Download CSV"}
+              <Download size={17} /> {saving ? t("Saving...") : t("Download CSV")}
             </button>
           </div>
         </div>
@@ -659,14 +667,14 @@ export default function ContentIdCreatorPage() {
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-3 py-3">X</th>
-                <th className="px-3 py-3">Filename</th>
+                <th className="px-3 py-3">{t("Filename")}</th>
                 <th className="px-3 py-3">ISRC</th>
                 <th className="px-3 py-3">UPC</th>
-                <th className="px-3 py-3">Song title</th>
-                <th className="px-3 py-3">Artist(s)</th>
-                <th className="px-3 py-3">Album</th>
-                <th className="px-3 py-3">Label</th>
-                <th className="px-3 py-3">Ownership</th>
+                <th className="px-3 py-3">{t("Song title")}</th>
+                <th className="px-3 py-3">{t("Artist(s)")}</th>
+                <th className="px-3 py-3">{t("Album")}</th>
+                <th className="px-3 py-3">{t("Label")}</th>
+                <th className="px-3 py-3">{t("Ownership")}</th>
               </tr>
             </thead>
             <tbody>
@@ -682,7 +690,7 @@ export default function ContentIdCreatorPage() {
                       <input
                         value={row[field]}
                         onChange={(event) => updateRow(index, field, event.target.value)}
-                        placeholder={field === "artist" ? "Artist A, Artist B" : ""}
+                        placeholder={field === "artist" ? t("Artist A, Artist B") : ""}
                         className="w-full rounded-xl border border-slate-200 px-3 py-2"
                       />
                     </td>
@@ -691,7 +699,7 @@ export default function ContentIdCreatorPage() {
               ))}
               {!rows.length && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">Choose a music folder or add rows manually.</td>
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">{t("Choose a music folder or add rows manually.")}</td>
                 </tr>
               )}
             </tbody>

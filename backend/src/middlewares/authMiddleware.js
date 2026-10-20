@@ -131,6 +131,7 @@ function allowRoles(...roles) {
 }
 
 module.exports = {
+  SUPER_ADMIN_ROLES,
   authMiddleware,
   allowRoles,
   parseRoles,

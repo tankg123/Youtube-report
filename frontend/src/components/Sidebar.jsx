@@ -6,6 +6,8 @@ import {
   Building2,
   ChevronDown,
   CircleDollarSign,
+  Clapperboard,
+  CloudUpload,
   Database,
   Disc3,
   FileAudio,
@@ -47,7 +49,7 @@ export default function Sidebar() {
   const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/exchange-rates", "/companies", "/groups"];
-  const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/whitelists", "/content-id/labels", "/content-id/artists"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/delivery", "/content-id/video-delivery", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/whitelists", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
   const emailPaths = ["/email/notification"];
@@ -70,40 +72,42 @@ export default function Sidebar() {
   }
 
   const channelMenus = [
-    { name: "Overview", path: "/channel-management", icon: Video },
-    { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
-    { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
+    { name: t("Overview"), path: "/channel-management", icon: Video },
+    { name: t("Collaborators"), path: "/channel-management/collaborators", icon: Users },
+    { name: t("Sharing"), path: "/channel-management/sharing", icon: Percent }
   ];
 
   const reportMenus = [
-    { name: "Partner Dashboard", path: "/partner-dashboard", icon: BarChart3, show: canViewPartnerDashboard },
-    { name: "Dashboard", path: "/report-dashboard", icon: BarChart3, show: canViewReports },
+    { name: t("Partner Dashboard"), path: "/partner-dashboard", icon: BarChart3, show: canViewPartnerDashboard },
+    { name: t("Dashboard"), path: "/report-dashboard", icon: BarChart3, show: canViewReports },
     { name: t("report"), path: "/reports", icon: FileSpreadsheet, show: canViewReports },
-    { name: "Export Multi", path: "/export-multi", icon: FileSpreadsheet, show: canViewReports },
-    { name: "Channel", path: "/channels", icon: Video, show: canViewReports },
+    { name: t("Export Multi"), path: "/export-multi", icon: FileSpreadsheet, show: canViewReports },
+    { name: t("Channel"), path: "/channels", icon: Video, show: canViewReports },
     { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign, show: canViewReports },
     { name: t("company"), path: "/companies", icon: BriefcaseBusiness, show: canViewReports },
     { name: t("group"), path: "/groups", icon: UsersRound, show: canViewReports || canViewPartnerDashboard }
   ].filter((item) => item.show);
 
   const partnerMenus = [
-    { name: "Overview", path: "/partners/overview", icon: BarChart3 },
-    { name: "Partner", path: "/partners/list", icon: Building2 },
-    { name: "Contract", path: "/partners/contracts", icon: FileSignature }
+    { name: t("Overview"), path: "/partners/overview", icon: BarChart3 },
+    { name: t("Partner"), path: "/partners/list", icon: Building2 },
+    { name: t("Contract"), path: "/partners/contracts", icon: FileSignature }
   ];
 
   const emailMenus = [
-    { name: "Email Notification", path: "/email/notification", icon: Mail }
+    { name: t("Email Notification"), path: "/email/notification", icon: Mail }
   ];
 
   const contentIdMenus = [
-    { name: "Creator Soundrecording & Art", path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
-    { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
-    { name: "Product Manager", path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
-    { name: "Claim Manager", path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
-    { name: "Whitelist", path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
-    { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
-    { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
+    { name: t("Creator Soundrecording & Art"), path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
+    { name: t("CMS Delivery"), path: "/content-id/delivery", icon: CloudUpload, show: canViewContentIdFull },
+    { name: t("Video Delivery"), path: "/content-id/video-delivery", icon: Clapperboard, show: canViewContentIdFull },
+    { name: t("Web Asset Reference"), path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
+    { name: t("Product Manager"), path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
+    { name: t("Claim Manager"), path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+    { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
+    { name: t("Label"), path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
+    { name: t("Artist"), path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
   ].filter((item) => item.show);
 
   const menus = [
@@ -113,7 +117,7 @@ export default function Sidebar() {
   const settingsMenus = [
     { name: t("systemSettings"), path: "/settings/system", icon: Settings },
     { name: t("network"), path: "/networks", icon: Network },
-    { name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }
+    { name: t("Content ID Setting"), path: "/settings/content-id", icon: Disc3 }
   ].filter((item) => {
     if (item.path === "/settings/system" || item.path === "/networks") return canViewSettings;
     return canViewContentIdSettings;
@@ -134,7 +138,7 @@ export default function Sidebar() {
           "absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-xl border text-slate-500 transition hover:text-blue-600",
           isDark ? "border-slate-700 bg-slate-900 hover:bg-slate-800" : "border-slate-200 bg-white hover:bg-slate-50"
         ].join(" ")}
-        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        title={sidebarCollapsed ? t("Show sidebar") : t("Hide sidebar")}
       >
         <MoreHorizontal size={18} />
       </button>
@@ -182,7 +186,7 @@ export default function Sidebar() {
             ].join(" ")}
           >
             <Home size={20} />
-            <span className="font-medium">Home</span>
+            <span className="font-medium">{t("Home")}</span>
           </Link>
         )}
 
@@ -203,7 +207,7 @@ export default function Sidebar() {
               ].join(" ")}
             >
               <Video size={20} />
-              <span className="font-medium flex-1 text-left">Channel Management</span>
+              <span className="font-medium flex-1 text-left">{t("Channel Management")}</span>
               <ChevronDown size={17} className={channelOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
@@ -301,7 +305,7 @@ export default function Sidebar() {
               ].join(" ")}
             >
               <Disc3 size={20} />
-              <span className="font-medium flex-1 text-left">Content ID</span>
+              <span className="font-medium flex-1 text-left">{t("Content ID")}</span>
               <ChevronDown size={17} className={contentIdOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
@@ -405,7 +409,7 @@ export default function Sidebar() {
               ].join(" ")}
             >
               <Building2 size={20} />
-              <span className="font-medium flex-1 text-left">Partner & Contract</span>
+              <span className="font-medium flex-1 text-left">{t("Partner & Contract")}</span>
               <ChevronDown size={17} className={partnerOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
@@ -454,7 +458,7 @@ export default function Sidebar() {
               ].join(" ")}
             >
               <Mail size={20} />
-              <span className="font-medium flex-1 text-left">Email</span>
+              <span className="font-medium flex-1 text-left">{t("Email")}</span>
               <ChevronDown size={17} className={emailOpen ? "rotate-180 transition" : "transition"} />
             </button>
 

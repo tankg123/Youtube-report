@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { PackageSearch, RefreshCw, Trash2 } from "lucide-react";
 import api from "../api/api";
+import { useI18n } from "../context/I18nContext";
 
 export default function ContentIdProductsPage() {
+  const { t, tm, tk } = useI18n();
   const [products, setProducts] = useState([]);
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState("");
@@ -19,9 +21,9 @@ export default function ContentIdProductsPage() {
   }
 
   async function deleteProduct(id) {
-    if (!window.confirm("Delete this product and return its codes to unused?")) return;
+    if (!window.confirm(t("Delete this product and return its codes to unused?"))) return;
     await api.delete(`/content-id/products/${id}`);
-    setMessage("Product deleted");
+    setMessage(tk("Product deleted"));
     setSelected(null);
     loadProducts();
   }
@@ -38,35 +40,35 @@ export default function ContentIdProductsPage() {
             <p className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
               <PackageSearch size={14} /> Content ID
             </p>
-            <h1 className="mt-3 text-3xl font-black text-slate-950">Product Manager</h1>
-            <p className="mt-1 text-sm text-slate-500">Saved albums, tracks, UPC, ISRC and matched usage history.</p>
+            <h1 className="mt-3 text-3xl font-black text-slate-950">{t("Product Manager")}</h1>
+            <p className="mt-1 text-sm text-slate-500">{t("Saved albums, tracks, UPC, ISRC and matched usage history.")}</p>
           </div>
           <div className="flex gap-2">
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search album, artist, UPC..." className="rounded-2xl border border-slate-200 px-4 py-3" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("Search album, artist, UPC...")} className="rounded-2xl border border-slate-200 px-4 py-3" />
             <button onClick={loadProducts} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">
-              <RefreshCw size={16} /> Refresh
+              <RefreshCw size={16} /> {t("Refresh")}
             </button>
           </div>
         </div>
-        {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{message}</div>}
+        {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{tm(message)}</div>}
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1fr_480px]">
         <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 p-4">
-            <h2 className="text-lg font-black text-slate-950">Products <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">{products.length}</span></h2>
+            <h2 className="text-lg font-black text-slate-950">{t("Products")} <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">{products.length}</span></h2>
           </div>
           <div className="overflow-auto">
             <table className="min-w-[900px] w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Album</th>
+                  <th className="px-4 py-3">{t("Album")}</th>
                   <th className="px-4 py-3">UPC</th>
-                  <th className="px-4 py-3">Genre</th>
-                  <th className="px-4 py-3">Label</th>
-                  <th className="px-4 py-3">Tracks</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3">Action</th>
+                  <th className="px-4 py-3">{t("Genre")}</th>
+                  <th className="px-4 py-3">{t("Label")}</th>
+                  <th className="px-4 py-3">{t("Tracks")}</th>
+                  <th className="px-4 py-3">{t("Created")}</th>
+                  <th className="px-4 py-3">{t("Action")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -92,7 +94,7 @@ export default function ContentIdProductsPage() {
                 ))}
                 {!products.length && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500">No products yet.</td>
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500">{t("No products yet.")}</td>
                   </tr>
                 )}
               </tbody>
@@ -101,15 +103,15 @@ export default function ContentIdProductsPage() {
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-black text-slate-950">Product detail</h2>
+          <h2 className="text-lg font-black text-slate-950">{t("Product detail")}</h2>
           {!selected ? (
-            <p className="mt-8 text-sm text-slate-500">Select a product to view tracks.</p>
+            <p className="mt-8 text-sm text-slate-500">{t("Select a product to view tracks.")}</p>
           ) : (
             <div className="mt-4 space-y-4">
               <div className="rounded-2xl bg-slate-50 p-4">
                 <p className="text-xl font-black text-slate-950">{selected.album_title}</p>
                 <p className="text-sm text-slate-500">{selected.album_artist || "-"} | UPC {selected.album_upc}</p>
-                <p className="mt-2 text-xs text-slate-500">Release: {selected.release_date || "-"} | Policy: {selected.match_policy || "-"}</p>
+                <p className="mt-2 text-xs text-slate-500">{t("Release: {date} | Policy: {policy}", { date: selected.release_date || "-", policy: selected.match_policy ? t(selected.match_policy) : "-" })}</p>
               </div>
               <div className="max-h-[620px] space-y-2 overflow-auto pr-1">
                 {selected.tracks?.map((track) => (

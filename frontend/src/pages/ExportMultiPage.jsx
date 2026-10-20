@@ -2,14 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Download, FileSpreadsheet, Loader2, Search } from "lucide-react";
 import api from "../api/api";
 import { useSystemSettings } from "../context/SystemSettingsContext";
+import { useI18n } from "../context/I18nContext";
+// Plain i18n helpers for the module-level functions below; the component itself uses useI18n() (and
+// passes its `language` down) so it re-renders on a language change.
+import { formatDate, t, tk } from "../i18n/index.js";
+import { revenueTaxColumnsLabel, revenueTaxFlags, revenueTaxKindsLabel } from "../utils/revenueTax";
 
 const ALL_CHANNEL_RANGE_OPTIONS = [
-  { value: "1", label: "Selected month only" },
-  { value: "2", label: "Last 2 months" },
-  { value: "3", label: "Last 3 months" },
-  { value: "6", label: "Last 6 months" },
-  { value: "12", label: "Last 12 months" },
-  { value: "year", label: "This year (Jan → selected month)" }
+  { value: "1", label: tk("Selected month only") },
+  { value: "2", label: tk("Last 2 months") },
+  { value: "3", label: tk("Last 3 months") },
+  { value: "6", label: tk("Last 6 months") },
+  { value: "12", label: tk("Last 12 months") },
+  { value: "year", label: tk("This year (Jan → selected month)") }
 ];
 
 function currentMonth() {
@@ -28,16 +33,16 @@ function allChannelsStartMonth(month, selection) {
   return shiftMonth(month, -(count - 1));
 }
 
-function allChannelsRangeLabel(month, selection) {
+function allChannelsRangeLabel(month, selection, language) {
   const start = allChannelsStartMonth(month, selection);
-  if (start === month) return monthLabel(month);
-  return `${monthLabel(start)} – ${monthLabel(month)}`;
+  if (start === month) return monthLabel(month, language);
+  return `${monthLabel(start, language)} – ${monthLabel(month, language)}`;
 }
 
-function monthLabel(month) {
-  if (!month) return "Select month";
+function monthLabel(month, language) {
+  if (!month) return t("Select month");
   const [year, value] = month.split("-");
-  return new Date(Number(year), Number(value) - 1, 1).toLocaleDateString("en-US", {
+  return formatDate(new Date(Number(year), Number(value) - 1, 1), language, {
     month: "long",
     year: "numeric"
   });
@@ -89,6 +94,7 @@ function sleep(ms) {
 
 export default function ExportMultiPage() {
   const { settings } = useSystemSettings();
+  const { t, tm, language } = useI18n();
   const [month, setMonth] = useState(currentMonth());
   const [groups, setGroups] = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -99,7 +105,10 @@ export default function ExportMultiPage() {
   const [includeSignatures, setIncludeSignatures] = useState(false);
   const [exportUsBr, setExportUsBr] = useState(false);
   const [keyword, setKeyword] = useState("");
-  const revenueTaxEnabled = String(settings?.revenue_tax_us_br_enabled || "0") === "1";
+  const revenueTax = revenueTaxFlags(settings);
+  const revenueTaxEnabled = revenueTax.any;
+  // "US / BR", "US" or "BR": the kinds switched on in Settings.
+  const taxKindsLabel = revenueTaxKindsLabel(revenueTax);
   // Effective flag from the server: global switch on AND the group has "Tính thuế US / BR" ticked.
   const groupAppliesRevenueTax = (group) => Number(group?.summary?.apply_revenue_tax ?? 0) === 1;
   const [loading, setLoading] = useState(true);
@@ -121,7 +130,7 @@ export default function ExportMultiPage() {
       setSelectedIds((current) => current.filter((id) => nextGroups.some((group) => Number(group.id) === Number(id))));
       if (!companyId && nextCompanies[0]) setCompanyId(String(nextCompanies[0].id));
     } catch (error) {
-      setMessage(error.response?.data?.message || "Could not load export data");
+      setMessage(error.response?.data?.message || tk("Could not load export data"));
     } finally {
       setLoading(false);
     }
@@ -186,8 +195,8 @@ export default function ExportMultiPage() {
   async function exportAllChannels() {
     try {
       setExportingAll(true);
-      const rangeLabel = allChannelsRangeLabel(month, allChannelsMonths);
-      setMessage(`Exporting all channels for ${rangeLabel}...`);
+      const rangeLabel = allChannelsRangeLabel(month, allChannelsMonths, language);
+      setMessage(t("Exporting all channels for {range}...", { range: rangeLabel }));
       const res = await api.post("/reports/manager/export-month-channels", { month, months: allChannelsMonths }, {
         responseType: "blob",
         timeout: 120000
@@ -204,9 +213,9 @@ export default function ExportMultiPage() {
         headerFileName || fallbackFileName,
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       );
-      setMessage(`Exported all channels for ${rangeLabel}.`);
+      setMessage(t("Exported all channels for {range}.", { range: rangeLabel }));
     } catch (error) {
-      setMessage(await exportErrorMessage(error, "Could not export all channels"));
+      setMessage(await exportErrorMessage(error, tk("Could not export all channels")));
     } finally {
       setExportingAll(false);
     }
@@ -214,13 +223,15 @@ export default function ExportMultiPage() {
 
   async function exportSelected() {
     if (!selectedIds.length) {
-      setMessage("Please choose at least one group to export.");
+      setMessage(tk("Please choose at least one group to export."));
       return;
     }
 
     try {
       setExporting(true);
-      setMessage(`Exporting ${selectedIds.length} group${selectedIds.length > 1 ? "s" : ""}...`);
+      setMessage(selectedIds.length > 1
+        ? t("Exporting {count} groups...", { count: selectedIds.length })
+        : t("Exporting {count} group...", { count: selectedIds.length }));
       const selectedGroups = groups.filter((group) => selectedIds.includes(group.id));
       let exportedWithUsBr = 0;
 
@@ -262,11 +273,13 @@ export default function ExportMultiPage() {
       }
 
       setMessage(
-        `Exported ${selectedGroups.length} group${selectedGroups.length > 1 ? "s" : ""}.`
-        + (exportedWithUsBr > 0 ? ` ${exportedWithUsBr} with US/BR tax columns.` : "")
+        (selectedGroups.length > 1
+          ? t("Exported {count} groups.", { count: selectedGroups.length })
+          : t("Exported {count} group.", { count: selectedGroups.length }))
+        + (exportedWithUsBr > 0 ? ` ${t("{count} with {taxes} tax columns.", { count: exportedWithUsBr, taxes: taxKindsLabel })}` : "")
       );
     } catch (error) {
-      setMessage(await exportErrorMessage(error, "Could not export selected groups"));
+      setMessage(await exportErrorMessage(error, tk("Could not export selected groups")));
     } finally {
       setExporting(false);
     }
@@ -279,21 +292,21 @@ export default function ExportMultiPage() {
           <div>
             <p className="mb-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black uppercase text-emerald-700">
               <FileSpreadsheet size={15} />
-              Report export
+              {t("Report export")}
             </p>
-            <h1 className="text-2xl font-black text-slate-900">Export Multi</h1>
-            <p className="mt-1 text-sm text-slate-500">Choose multiple groups and export invoices for the selected month.</p>
+            <h1 className="text-2xl font-black text-slate-900">{t("Export Multi")}</h1>
+            <p className="mt-1 text-sm text-slate-500">{t("Choose multiple groups and export invoices for the selected month.")}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <select
               value={allChannelsMonths}
               onChange={(event) => setAllChannelsMonths(event.target.value)}
               disabled={exportingAll}
-              title="Months included in the all-channels export: one revenue column per month"
+              title={t("Months included in the all-channels export: one revenue column per month")}
               className="rounded-2xl border border-blue-200 bg-white px-4 py-3 font-bold text-blue-700 shadow-sm disabled:opacity-50"
             >
               {ALL_CHANNEL_RANGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
+                <option key={option.value} value={option.value}>{t(option.label)}</option>
               ))}
             </select>
             <button
@@ -301,10 +314,10 @@ export default function ExportMultiPage() {
               onClick={exportAllChannels}
               disabled={exportingAll || exporting}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 shadow-sm disabled:opacity-50"
-              title={`Export every channel with revenue in ${allChannelsRangeLabel(month, allChannelsMonths)} to Excel`}
+              title={t("Export every channel with revenue in {range} to Excel", { range: allChannelsRangeLabel(month, allChannelsMonths, language) })}
             >
               {exportingAll ? <Loader2 className="animate-spin" size={18} /> : <FileSpreadsheet size={18} />}
-              Export all channels
+              {t("Export all channels")}
             </button>
             <button
               type="button"
@@ -313,19 +326,19 @@ export default function ExportMultiPage() {
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white shadow-sm disabled:opacity-50"
             >
               {exporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
-              Export selected ({selectedIds.length})
+              {t("Export selected ({count})", { count: selectedIds.length })}
             </button>
           </div>
         </div>
       </section>
 
-      {message && <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 font-bold text-blue-700">{message}</div>}
+      {message && <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 font-bold text-blue-700">{tm(message)}</div>}
 
       <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 p-5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <label>
-              <span className="mb-2 block text-xs font-black uppercase text-slate-400">Month</span>
+              <span className="mb-2 block text-xs font-black uppercase text-slate-400">{t("Month")}</span>
               <input
                 type="month"
                 value={month}
@@ -334,19 +347,19 @@ export default function ExportMultiPage() {
               />
             </label>
             <label>
-              <span className="mb-2 block text-xs font-black uppercase text-slate-400">Company</span>
+              <span className="mb-2 block text-xs font-black uppercase text-slate-400">{t("Company")}</span>
               <select
                 value={companyId}
                 onChange={(event) => setCompanyId(event.target.value)}
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 font-bold"
               >
-                {companies.length === 0 ? <option value="">Default company</option> : companies.map((company) => (
+                {companies.length === 0 ? <option value="">{t("Default company")}</option> : companies.map((company) => (
                   <option key={company.id} value={company.id}>{company.company_name}</option>
                 ))}
               </select>
             </label>
             <label>
-              <span className="mb-2 block text-xs font-black uppercase text-slate-400">Format</span>
+              <span className="mb-2 block text-xs font-black uppercase text-slate-400">{t("Format")}</span>
               <select
                 value={format}
                 onChange={(event) => setFormat(event.target.value)}
@@ -357,33 +370,33 @@ export default function ExportMultiPage() {
               </select>
             </label>
             <label className={format === "pdf" ? "block" : "hidden"}>
-              <span className="mb-2 block text-xs font-black uppercase text-slate-400">PDF signature</span>
+              <span className="mb-2 block text-xs font-black uppercase text-slate-400">{t("PDF signature")}</span>
               <button
                 type="button"
                 onClick={() => setIncludeSignatures((value) => !value)}
                 className={`flex w-full items-center gap-2 rounded-2xl border px-4 py-3 font-bold ${includeSignatures ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-600"}`}
               >
                 <Check size={17} />
-                {includeSignatures ? "Include sign boxes" : "No sign boxes"}
+                {includeSignatures ? t("Include sign boxes") : t("No sign boxes")}
               </button>
             </label>
             <label className={format === "excel" && revenueTaxEnabled ? "block" : "hidden"}>
-              <span className="mb-2 block text-xs font-black uppercase text-slate-400">US / BR tax columns</span>
+              <span className="mb-2 block text-xs font-black uppercase text-slate-400">{t("{taxes} tax columns", { taxes: taxKindsLabel })}</span>
               <button
                 type="button"
                 onClick={() => setExportUsBr((value) => !value)}
-                title="Adds Revenue US, Tax US, Revenue BR and Tax BR to the Excel of every selected group that has US / BR tax enabled."
+                title={t("Adds {columns} to the Excel of every selected group that applies {taxes} tax.", { columns: revenueTaxColumnsLabel(revenueTax), taxes: taxKindsLabel })}
                 className={`flex w-full items-center gap-2 rounded-2xl border px-4 py-3 font-bold ${exportUsBr ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-600"}`}
               >
                 <Check size={17} />
-                {exportUsBr ? "Add US/BR columns" : "No US/BR columns"}
+                {exportUsBr ? t("Add {taxes} columns", { taxes: taxKindsLabel }) : t("No {taxes} columns", { taxes: taxKindsLabel })}
               </button>
             </label>
             <label>
-              <span className="mb-2 block text-xs font-black uppercase text-slate-400">Search</span>
+              <span className="mb-2 block text-xs font-black uppercase text-slate-400">{t("Search")}</span>
               <div className="flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-3">
                 <Search size={17} className="text-slate-400" />
-                <input value={keyword} onChange={(event) => setKeyword(event.target.value)} className="w-full bg-transparent text-sm outline-none" placeholder="Group or partner..." />
+                <input value={keyword} onChange={(event) => setKeyword(event.target.value)} className="w-full bg-transparent text-sm outline-none" placeholder={t("Group or partner...")} />
               </div>
             </label>
           </div>
@@ -391,8 +404,12 @@ export default function ExportMultiPage() {
 
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 className="font-black text-slate-900">{monthLabel(month)}</h2>
-            <p className="text-sm text-slate-500">{filteredGroups.length} groups available</p>
+            <h2 className="font-black text-slate-900">{monthLabel(month, language)}</h2>
+            <p className="text-sm text-slate-500">
+              {filteredGroups.length === 1
+                ? t("{count} group available", { count: filteredGroups.length })
+                : t("{count} groups available", { count: filteredGroups.length })}
+            </p>
           </div>
           <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50">
             <input
@@ -401,14 +418,14 @@ export default function ExportMultiPage() {
               onChange={toggleAllFiltered}
               className="h-4 w-4"
             />
-            <span>Select all groups</span>
+            <span>{t("Select all groups")}</span>
           </label>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="animate-spin text-blue-600" size={34} /></div>
         ) : filteredGroups.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">No groups found for this month.</div>
+          <div className="p-12 text-center text-slate-500">{t("No groups found for this month.")}</div>
         ) : (
           <div className="divide-y divide-slate-100">
             {filteredGroups.map((group) => {
@@ -422,15 +439,15 @@ export default function ExportMultiPage() {
                       <p className="mt-1 text-sm text-slate-500">{group.partner_name || "-"}</p>
                       {revenueTaxEnabled && groupAppliesRevenueTax(group) && (
                         <span className={`mt-2 inline-flex rounded-lg px-2 py-0.5 text-[11px] font-bold ${exportUsBr && format === "excel" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                          US/BR tax{exportUsBr && format === "excel" ? " · columns in Excel" : ""}
+                          {t("{taxes} tax", { taxes: taxKindsLabel })}{exportUsBr && format === "excel" ? ` · ${t("columns in Excel")}` : ""}
                         </span>
                       )}
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-3 text-right text-sm md:min-w-[420px]">
-                    <p><span className="block text-xs font-black uppercase text-slate-400">Channels</span><b>{group.channel_count || 0}</b></p>
-                    <p><span className="block text-xs font-black uppercase text-slate-400">Currency</span><b>{group.currency || "USD"}</b></p>
-                    <p><span className="block text-xs font-black uppercase text-slate-400">Paid</span><b className="text-emerald-700">{money(group.summary?.paid_converted ?? group.summary?.paid ?? 0, group.currency)}</b></p>
+                    <p><span className="block text-xs font-black uppercase text-slate-400">{t("Channels")}</span><b>{group.channel_count || 0}</b></p>
+                    <p><span className="block text-xs font-black uppercase text-slate-400">{t("Currency")}</span><b>{group.currency || "USD"}</b></p>
+                    <p><span className="block text-xs font-black uppercase text-slate-400">{t("Paid")}</span><b className="text-emerald-700">{money(group.summary?.paid_converted ?? group.summary?.paid ?? 0, group.currency)}</b></p>
                   </div>
                 </label>
               );
