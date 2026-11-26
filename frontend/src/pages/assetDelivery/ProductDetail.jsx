@@ -137,6 +137,7 @@ import {
 } from "./utils";
 import { useDocumentVisible, useInterval } from "./hooks";
 import { useI18n } from "../../context/I18nContext";
+import { useSystemSettings } from "../../context/SystemSettingsContext";
 import { tk } from "../../i18n/index.js";
 import DeliveryLogViewer from "./DeliveryLogViewer";
 import ShortMediaDialog from "./ShortMediaDialog";
@@ -2252,7 +2253,11 @@ function ClaimsModal({ track, onClose }) {
 function TrackDetailsModal({ track, product, meta, onClose }) {
   const { t, tm } = useI18n();
   const copy = copyOf(meta);
-  const [tab, setTab] = useState("metadata");
+  const { isSidebarVisible } = useSystemSettings();
+  const path = meta.kind === "video" ? "/content-id/video-delivery" : "/content-id/delivery";
+  const tabs = DETAIL_TABS.filter((item) => isSidebarVisible(`${path}#detail/${item.key}`));
+  const [selectedTab, setTab] = useState("metadata");
+  const tab = (tabs.find((item) => item.key === selectedTab) || tabs[0])?.key;
   const sections = {
     metadata: pickJson(track, "metadata", "metadata_json", null),
     ownership: pickJson(track, "ownership", "ownership_json", null),
@@ -2386,11 +2391,11 @@ function TrackDetailsModal({ track, product, meta, onClose }) {
           </section>
         )}
 
-        <section className="space-y-3">
+        {tab && <section className="space-y-3">
           <SectionTitle icon={FileText}>{t("Payloads")}</SectionTitle>
-          <TabBar tabs={DETAIL_TABS.map((item) => ({ ...item, label: t(item.label) }))} active={tab} onChange={setTab} />
+          <TabBar tabs={tabs.map((item) => ({ ...item, label: t(item.label) }))} active={tab} onChange={setTab} />
           <JsonViewer value={sections[tab]} maxHeight={360} />
-        </section>
+        </section>}
       </div>
     </Modal>
   );

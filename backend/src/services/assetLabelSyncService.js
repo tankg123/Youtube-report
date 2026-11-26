@@ -1,6 +1,6 @@
 const axios = require("axios");
 const db = require("../config/database");
-const { getAccessToken, getConnectedNetwork } = require("./googleContentIdService");
+const { getConnectedNetwork, withCmsAccessToken } = require("./googleContentIdService");
 
 const CONTENT_ID_API_BASE = "https://youtubepartner.googleapis.com/youtube/partner/v1";
 const MAX_PAGES_PER_CMS = 100;
@@ -13,12 +13,6 @@ function listAccounts() {
     WHERE cms_auth_status = 'connected' AND network_code IS NOT NULL AND trim(network_code) != ''
     ORDER BY name COLLATE NOCASE ASC
   `).all().map((row) => ({ id: row.id, cms_id: String(row.network_code || "").trim(), cms_name: row.name }));
-}
-
-async function getFreshAccessTokenForAccount(accountId) {
-  const network = getConnectedNetwork(accountId);
-  const accessToken = await getAccessToken(network);
-  return { accessToken, account: { id: network.id, cms_id: String(network.network_code || "").trim(), cms_name: network.name } };
 }
 
 function normalizeLabelName(label) {
@@ -64,13 +58,14 @@ function upsertContentIdLabel(name, notes) {
 }
 
 async function listCmsAssetLabels(accountId) {
-  const { accessToken, account } = await getFreshAccessTokenForAccount(accountId);
+  const network = getConnectedNetwork(accountId);
+  const account = { id: network.id, cms_id: String(network.network_code || "").trim(), cms_name: network.name };
   const labels = [];
   let pageToken = null;
   let page = 0;
 
   do {
-    const response = await axios.get(`${CONTENT_ID_API_BASE}/assetLabels`, {
+    const response = await withCmsAccessToken(network, (accessToken) => axios.get(`${CONTENT_ID_API_BASE}/assetLabels`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       params: {
         onBehalfOfContentOwner: account.cms_id,
@@ -78,7 +73,7 @@ async function listCmsAssetLabels(accountId) {
         pageToken: pageToken || undefined
       },
       timeout: 30000
-    });
+    }));
 
     labels.push(...(response.data.items || response.data.assetLabels || []));
     pageToken = response.data.nextPageToken || null;

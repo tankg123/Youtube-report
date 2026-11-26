@@ -1,0 +1,59 @@
+/*
+ * Text boxes of the PDF editor (text/TextBox.jsx, text/TextEditor.jsx).
+ *
+ * Everything that decides where a glyph stands is an INLINE style taken from text/textStyle.js, the same
+ * object the measuring host uses: nothing in this file may change the layout of the text. Here are only the
+ * looks around it: the selection outline, the editing frame, the caret, the colour of selected text.
+ *
+ * A text box is laid out at 8 CSS pixels per point and painted through a transform, so a length written in
+ * this file would shrink with it. --pdfx-text-unit (set inline on the box) is the number of layout pixels
+ * that make one CSS pixel on screen: calc(1px * var(--pdfx-text-unit)) is one screen pixel.
+ */
+
+.pdfx-root .pdfx-textbox,
+.pdfx-root .pdfx-text-editor {
+  overflow: visible; /* ink reaches outside the box: stacked Vietnamese capitals, italic overhang */
+}
+
+.pdfx-root .pdfx-textbox {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pdfx-root .pdfx-textbox[data-selected="true"] {
+  outline: calc(1px * var(--pdfx-text-unit, 8)) solid var(--pdfx-accent, var(--ui-primary, #2563eb));
+  outline-offset: calc(2px * var(--pdfx-text-unit, 8));
+}
+
+/* the box that is being typed in: a quiet frame, so that an empty box can be seen */
+.pdfx-root .pdfx-text-editor {
+  outline: calc(1px * var(--pdfx-text-unit, 8)) dashed var(--pdfx-accent, var(--ui-primary, #2563eb));
+  outline-offset: calc(3px * var(--pdfx-text-unit, 8));
+}
+
+.pdfx-root .pdfx-text-editor-input::selection {
+  background-color: rgba(var(--ui-accent-rgb, 37, 99, 235), 0.28);
+}
+
+/* the editor's own caret (the browser's is hidden: the transform makes it too thin to see) */
+.pdfx-root .pdfx-text-caret {
+  animation: pdfx-text-caret-blink 1060ms steps(1, end) infinite;
+}
+
+@keyframes pdfx-text-caret-blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfx-root .pdfx-text-caret {
+    animation: none;
+  }
+}

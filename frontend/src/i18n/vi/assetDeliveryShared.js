@@ -103,6 +103,8 @@ export default {
   "Request failed": "Yêu cầu thất bại",
   "Cancelled": "Đã hủy",
   "Request timed out": "Yêu cầu quá thời gian chờ",
+  "The file exceeds the server's upload size limit (HTTP 413). Ask an administrator to increase the limit, then retry the upload.": "File vượt quá giới hạn dung lượng tải lên của máy chủ (HTTP 413). Hãy nhờ quản trị viên tăng giới hạn rồi thử tải lại.",
+  "The server returned an error page. Please try again or contact an administrator.": "Máy chủ trả về trang báo lỗi. Hãy thử lại hoặc liên hệ quản trị viên.",
 
   // utils.js — ownership / policy summaries
   "Include: {list}": "Bao gồm: {list}",

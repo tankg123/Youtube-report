@@ -1,4 +1,5 @@
 const db = require("../config/database");
+const sidebar = require("./sidebarVisibility");
 const {
   REVENUE_TAX_SETTING_KEY,
   REVENUE_TAX_SETTING_KEYS,
@@ -52,7 +53,8 @@ function getSettingsObject() {
 function getSettings(req, res) {
   res.json({
     success: true,
-    settings: getSettingsObject()
+    settings: getSettingsObject(),
+    sidebar: sidebar.runtimeVisibility()
   });
 }
 

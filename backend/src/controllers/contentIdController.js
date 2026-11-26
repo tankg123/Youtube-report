@@ -519,7 +519,8 @@ async function syncLabelsFromCms(req, res) {
     const result = await syncAssetLabelsFromCms();
     res.json({ success: true, ...result });
   } catch (error) {
-    res.status(error.response?.status || 400).json({
+    const status = error.response?.status || error.status || 400;
+    res.status(status === 401 || error.cmsAuthFailed ? 424 : status).json({
       success: false,
       message: error.response?.data?.error?.message || error.message
     });

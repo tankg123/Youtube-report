@@ -13,33 +13,53 @@ const CMS_SCOPES = [
   "https://www.googleapis.com/auth/youtube",
   "https://www.googleapis.com/auth/yt-analytics.readonly",
   "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
-  "https://www.googleapis.com/auth/youtubepartner",
-  "https://www.googleapis.com/auth/youtubepartner-channel-audit"
+  "https://www.googleapis.com/auth/youtubepartner"
 ];
 
-function getOAuthConfig() {
-  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const redirectUri =
-    process.env.GOOGLE_OAUTH_REDIRECT_URI ||
-    process.env.GOOGLE_CMS_REDIRECT_URI ||
-    `${process.env.BACKEND_PUBLIC_URL || "http://localhost:4015"}/api/reports/networks/cms-auth/callback`;
-
-  return { clientId, clientSecret, redirectUri };
+function env(name) {
+  return (process.env[name] || "").trim();
 }
 
-function assertOAuthConfig() {
-  const config = getOAuthConfig();
-
-  if (!config.clientId || !config.clientSecret || !config.redirectUri) {
-    const missing = [];
-    if (!config.clientId) missing.push("GOOGLE_CLIENT_ID");
-    if (!config.clientSecret) missing.push("GOOGLE_CLIENT_SECRET");
-    if (!config.redirectUri) missing.push("GOOGLE_OAUTH_REDIRECT_URI");
-    throw new Error(`Missing Google OAuth config: ${missing.join(", ")}`);
+function oauthClients() {
+  const id = env("GOOGLE_CLIENT_ID");
+  const secret = env("GOOGLE_CLIENT_SECRET");
+  const aliasId = env("GOOGLE_OAUTH_CLIENT_ID");
+  const aliasSecret = env("GOOGLE_OAUTH_CLIENT_SECRET");
+  const active = {
+    clientId: id || aliasId,
+    clientSecret: id ? secret || (!aliasId || id === aliasId ? aliasSecret : "") : aliasSecret || secret
+  };
+  const clients = [];
+  for (const pair of [active, { clientId: aliasId, clientSecret: aliasSecret },
+    { clientId: env("GOOGLE_PREVIOUS_CLIENT_ID"), clientSecret: env("GOOGLE_PREVIOUS_CLIENT_SECRET") }]) {
+    if (pair.clientId && pair.clientSecret && !clients.some((c) => c.clientId === pair.clientId && c.clientSecret === pair.clientSecret)) {
+      clients.push(pair);
+    }
   }
+  return { active, clients };
+}
 
-  return config;
+function clientError(message, reason = "oauth_client_not_configured") {
+  return Object.assign(new Error(message), { oauthClientMisconfigured: true, reason });
+}
+
+function activeClient() {
+  const { active } = oauthClients();
+  if (!active.clientId || !active.clientSecret) throw clientError("Configure a matching GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server.");
+  return active;
+}
+
+function clientDiagnostics() {
+  const { active, clients } = oauthClients();
+  return {
+    active: active.clientId && active.clientSecret ? active.clientId : null,
+    configuredIds: [...new Set(clients.map((client) => client.clientId))]
+  };
+}
+
+function redirectUri() {
+  return env("GOOGLE_OAUTH_REDIRECT_URI") || env("GOOGLE_CMS_REDIRECT_URI") ||
+    (env("BACKEND_PUBLIC_URL") || "http://localhost:4015").replace(/\/$/, "") + "/api/reports/networks/cms-auth/callback";
 }
 
 function base64UrlEncode(value) {
@@ -55,10 +75,12 @@ function signState(payload) {
   return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
-function createState(networkId) {
+function createState(networkId, authGeneration, clientId) {
   const payload = base64UrlEncode(
     JSON.stringify({
       network_id: Number(networkId),
+      auth_generation: authGeneration,
+      oauth_client_id: clientId,
       nonce: crypto.randomBytes(12).toString("hex"),
       ts: Date.now()
     })
@@ -81,55 +103,59 @@ function parseState(state) {
   return parsed;
 }
 
-function buildAuthUrl(networkId) {
-  const { clientId, redirectUri } = assertOAuthConfig();
+function buildAuthUrl(networkId, authGeneration = null) {
+  const { clientId } = activeClient();
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: redirectUri,
+    redirect_uri: redirectUri(),
     response_type: "code",
     scope: CMS_SCOPES.join(" "),
     access_type: "offline",
     prompt: "consent",
-    include_granted_scopes: "true",
-    state: createState(networkId)
+    include_granted_scopes: "false",
+    state: createState(networkId, authGeneration, clientId)
   });
 
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
 
-async function exchangeCode(code) {
-  const { clientId, clientSecret, redirectUri } = assertOAuthConfig();
-  const body = new URLSearchParams({
-    code,
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri,
-    grant_type: "authorization_code"
-  });
-
-  const response = await axios.post(GOOGLE_TOKEN_URL, body.toString(), {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    timeout: 20000
-  });
-
-  return response.data;
+function exchangeCode(code, clientId) {
+  return requestToken({ code, redirect_uri: redirectUri(), grant_type: "authorization_code" }, clientId || activeClient().clientId);
 }
 
-async function refreshAccessToken(refreshToken) {
-  const { clientId, clientSecret } = assertOAuthConfig();
-  const body = new URLSearchParams({
-    refresh_token: refreshToken,
-    client_id: clientId,
-    client_secret: clientSecret,
-    grant_type: "refresh_token"
-  });
+function refreshAccessToken(refreshToken, clientId) {
+  return requestToken({ refresh_token: refreshToken, grant_type: "refresh_token" }, clientId);
+}
 
-  const response = await axios.post(GOOGLE_TOKEN_URL, body.toString(), {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    timeout: 20000
-  });
-
-  return response.data;
+async function requestToken(params, clientId) {
+  const candidates = oauthClients().clients.filter((client) => !clientId || client.clientId === clientId);
+  if (!candidates.length) throw clientError("Configure the original OAuth client ID and its matching secret on this server to renew the saved CMS grant.");
+  let clientRejection;
+  let grantRejection;
+  for (const client of candidates) {
+    const body = new URLSearchParams({ ...params, client_id: client.clientId, client_secret: client.clientSecret });
+    try {
+      const response = await axios.post(GOOGLE_TOKEN_URL, body.toString(), {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 20000, maxRedirects: 0
+      });
+      return { ...response.data, oauth_client_id: client.clientId };
+    } catch (error) {
+      const code = error.response?.data?.error;
+      if (![400, 401].includes(error.response?.status)) throw error;
+      if (code === "invalid_client" || code === "unauthorized_client") clientRejection = error;
+      else if (code === "invalid_grant" && params.grant_type === "refresh_token") {
+        if (clientId) throw error;
+        grantRejection = error;
+      } else throw error;
+    }
+  }
+  // An older row has no recorded issuer. A different OAuth client can also get
+  // invalid_grant, so do not mark that stored token revoked on this evidence alone.
+  if (!clientRejection && grantRejection) throw clientError(
+    "Google refused this older CMS grant (invalid_grant). Verify its original OAuth client and secret; if they match, renew consent in Settings > Network.",
+    "oauth_client_unverified"
+  );
+  throw clientRejection;
 }
 
 async function getGoogleUser(accessToken) {
@@ -141,8 +167,24 @@ async function getGoogleUser(accessToken) {
   return response.data;
 }
 
+// Operator diagnostic for legacy grants. Send the token only in the POST body
+// to Google's fixed endpoint. A failed inspection never changes the saved grant.
+async function inspectAccessTokenClient(accessToken) {
+  if (!accessToken) return null;
+  const response = await axios.post("https://oauth2.googleapis.com/tokeninfo",
+    new URLSearchParams({ access_token: accessToken }).toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 10000, maxRedirects: 0,
+      validateStatus: (status) => status === 200 || status === 400 || status === 401
+    });
+  if (response.status !== 200) return null;
+  const issuerClient = response.data?.azp || response.data?.issued_to || response.data?.aud;
+  return typeof issuerClient === "string" && issuerClient ? issuerClient : null;
+}
+
 module.exports = {
   CMS_SCOPES,
+  clientDiagnostics,
+  inspectAccessTokenClient,
   buildAuthUrl,
   parseState,
   exchangeCode,

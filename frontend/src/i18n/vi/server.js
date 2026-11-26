@@ -2,6 +2,15 @@
 // Keys are the exact English texts used in the source (t("…") / tk("…")) or produced at runtime (tm()).
 // Keep {placeholders} identical to the key. Identity entries ("ISRC": "ISRC") are fine.
 export default {
+  "Unlock sidebar settings again.": "Vui lòng nhập lại mã để mở cài đặt thanh bên.",
+  "Set SIDEBAR_SETTINGS_CODE on the backend before changing the sidebar.": "Hãy cấu hình SIDEBAR_SETTINGS_CODE trên backend trước khi thay đổi thanh bên.",
+  "Incorrect sidebar code.": "Mã xác nhận thanh bên không đúng.",
+  "Invalid sidebar item or visibility.": "Mục menu hoặc trạng thái hiển thị không hợp lệ.",
+  "No saved CMS refresh token is available.": "CMS này chưa có refresh token đã lưu.",
+  "Could not check the saved CMS connection.": "Không thể kiểm tra kết nối CMS đã lưu.",
+  "Configure a matching GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server.": "Cấu hình đúng cặp GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET trên server.",
+  "Configure the original OAuth client ID and its matching secret on this server to renew the saved CMS grant.": "Cấu hình OAuth client ID đã cấp quyền CMS và secret tương ứng trên server này để làm mới token đã lưu.",
+  "Google refused this older CMS grant (invalid_grant). Verify its original OAuth client and secret; if they match, renew consent in Settings > Network.": "Google từ chối token CMS cũ (invalid_grant). Kiểm tra client ID và secret ban đầu. Nếu đã đúng cặp, hãy cấp quyền lại trong Cài đặt > Network.",
   // --- Claim statuses / write verbs (lowercase words embedded in dynamic sentences; rules.js reads them with t()) ---
   "active": "hoạt động",
   "inactive": "đã gỡ",

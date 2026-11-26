@@ -1,3 +1,4 @@
+import { useSystemSettings } from "../../context/SystemSettingsContext";
 import { useCallback, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { BadgeCheck, FileSearch, History, RefreshCw, ShieldAlert, ShieldCheck, Undo2 } from "lucide-react";
@@ -40,6 +41,7 @@ import ResultsPanel from "./ResultsPanel";
 import ClaimDetailModal from "./ClaimDetailModal";
 import ReleaseDialog from "./ReleaseDialog";
 import ReleaseHistoryPanel from "./ReleaseHistoryPanel";
+import ThirdPartyUploadsModal from "./ThirdPartyUploadsModal";
 
 const EMPTY_INPUTS = { videos: "", assets: "", claims: "", explore: "" };
 
@@ -106,7 +108,12 @@ export default function ClaimManagerPage() {
   const { run: runSearchRequest, nextPage, previousPage, cancel: cancelSearch, reset: resetSearch, updateClaims } = search;
   const { clear: clearSelection, remove: removeSelected } = selection;
 
-  const [tab, setTab] = useState("check");
+  const { isSidebarVisible } = useSystemSettings();
+  const checkVisible = isSidebarVisible("/content-id/claims#check");
+  const historyVisible = isSidebarVisible("/content-id/claims#history");
+  const detailsVisible = isSidebarVisible("/content-id/claims#check/detail");
+  const uploadsVisible = isSidebarVisible("/content-id/claims#check/uploads");
+  const [selectedTab, setTab] = useState("check");
   const [historyMounted, setHistoryMounted] = useState(false);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [storedNetworkIds, setStoredNetworkIds] = useLocalStorageState(STORAGE_KEYS.networks, null);
@@ -120,6 +127,7 @@ export default function ClaimManagerPage() {
   // `session` grows on every open so the detail modal remounts (fresh fetch, loading state) even
   // when the same claim is opened again after a release.
   const [detail, setDetail] = useState({ key: "", session: 0 });
+  const [ownershipVideo, setOwnershipVideo] = useState(null);
   // The open bulk dialog: `{ session, action: "release" | "activate", claims }`; `session` remounts the dialog per run.
   const [write, setWrite] = useState(null);
   const [recheckingKeys, setRecheckingKeys] = useState(() => new Set());
@@ -129,8 +137,11 @@ export default function ClaimManagerPage() {
   const [activateNote, setActivateNote] = useState("");
   const writeSessionRef = useRef(0);
 
+  const tab = selectedTab === "history" && historyVisible ? "history" : checkVisible ? "check" : historyVisible ? "history" : null;
+
   const openDetail = useCallback((claim) => setDetail((current) => ({ key: claimKey(claim), session: current.session + 1 })), []);
   const closeDetail = useCallback(() => setDetail((current) => (current.key ? { ...current, key: "" } : current)), []);
+  const closeOwnership = useCallback(() => setOwnershipVideo(null), [setOwnershipVideo]);
 
   const mode = isSearchMode(storedMode) ? storedMode : "videos";
   const eligibleAccounts = useMemo(() => accounts.accounts.filter((account) => account.has_partner_scope !== false), [accounts.accounts]);
@@ -154,7 +165,7 @@ export default function ClaimManagerPage() {
   }, [mode, parsed.ids.length, selectedNetworkIds.length, includeDetails, accounts.limits, tm]);
   const writing = Boolean(write);
   const detailClaim = useMemo(() => (detail.key ? search.claims.find((claim) => claimKey(claim) === detail.key) || null : null), [detail.key, search.claims]);
-  const modalOpen = Boolean(detailClaim) || writing || Boolean(activateTarget);
+  const modalOpen = Boolean(detailClaim || ownershipVideo || activateTarget) || writing;
   // The /networks route (App.jsx) and the cms-auth endpoints behind it are admin-only (canViewSettings).
   const canOpenNetworks = Boolean(canViewSettings);
   const noCms = accounts.loaded && !accounts.loading && !accounts.accounts.length && !accounts.error;
@@ -172,7 +183,7 @@ export default function ClaimManagerPage() {
     runSearchRequest(payload).then((data) => {
       if (data) showToast(summarizeSearch(data), (data.errors || []).length ? "warning" : "success", 5000);
     });
-  }, [search.loading, runSearchRequest, writing, validation, mode, selectedNetworkIds, parsed, filters, includeDetails, clearSelection, closeDetail, showToast]);
+  }, [search.loading, runSearchRequest, writing, validation, mode, selectedNetworkIds, parsed, filters, includeDetails, clearSelection, closeDetail, showToast, setAttempted]);
 
   useSearchShortcut(tab === "check" && !modalOpen, runSearch);
 
@@ -195,7 +206,7 @@ export default function ClaimManagerPage() {
     closeDetail();
     clearSelection();
     resetSearch();
-  }, [mode, clearSelection, closeDetail, resetSearch]);
+  }, [mode, clearSelection, closeDetail, resetSearch, setInputs, setFilters, setAttempted]);
 
   /** Open the bulk dialog for `action` with the claims it can write (`eligible` filter); `blockedMessage` when none qualifies. */
   const openWrite = useCallback(
@@ -336,7 +347,7 @@ export default function ClaimManagerPage() {
       setActivateNote("");
       setActivateTarget({ claim, action, source });
     },
-    [closeDetail, showToast, t, tm]
+    [closeDetail, showToast, t, tm, setActivateNote, setActivateTarget]
   );
 
   const openReinstate = useCallback((claim, source) => openActivateOne(claim, "reinstate", source), [openActivateOne]);
@@ -382,7 +393,7 @@ export default function ClaimManagerPage() {
   const tabs = [
     { key: "check", label: t("Check claims"), icon: FileSearch, count: search.claims.length || undefined },
     { key: "history", label: t("Release history"), icon: History }
-  ];
+  ].filter((item) => item.key === "check" ? checkVisible : historyVisible);
   const activateCopy = activateTarget ? ACTIVATE_ONE_COPY[activateTarget.action] || ACTIVATE_ONE_COPY.reinstate : null;
 
   return (
@@ -435,9 +446,9 @@ export default function ClaimManagerPage() {
         )}
       </section>
 
-      <TabBar tabs={tabs} active={tab} onChange={changeTab} />
+      {tabs.length ? <TabBar tabs={tabs} active={tab} onChange={changeTab} /> : <p>{t("No visible subpages.")}</p>}
 
-      <div hidden={tab !== "check"}>
+      {checkVisible && <div hidden={tab !== "check"}>
         {noCms ? (
           <EmptyState
             icon={ShieldAlert}
@@ -512,7 +523,8 @@ export default function ClaimManagerPage() {
               grouped={Boolean(grouped)}
               onGroupedChange={setGrouped}
               busy={writing}
-              onOpenDetail={openDetail}
+              onOpenDetail={detailsVisible ? openDetail : undefined}
+              onOpenThirdPartyUploads={uploadsVisible && search.result?.networks?.length ? setOwnershipVideo : undefined}
               onReleaseClaims={openRelease}
               onActivateClaims={openActivate}
               onRecheckClaim={handleRecheckClaim}
@@ -525,9 +537,9 @@ export default function ClaimManagerPage() {
             />
           </div>
         )}
-      </div>
+      </div>}
 
-      {historyMounted && (
+      {historyVisible && (historyMounted || tab === "history") && (
         <div hidden={tab !== "history"}>
           <ReleaseHistoryPanel
             refreshKey={historyRefresh}
@@ -540,7 +552,11 @@ export default function ClaimManagerPage() {
         </div>
       )}
 
-      {detailClaim && (
+      {uploadsVisible && ownershipVideo && search.result?.networks?.length > 0 && (
+        <ThirdPartyUploadsModal video={ownershipVideo} networks={search.result.networks} onClose={closeOwnership} />
+      )}
+
+      {detailsVisible && detailClaim && (
         <ClaimDetailModal
           key={detail.session}
           claim={detailClaim}

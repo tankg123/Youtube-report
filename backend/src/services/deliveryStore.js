@@ -85,13 +85,17 @@ function errorReason(error) {
   return cleanText(error?.reason) || cleanText(error?.response?.data?.error?.errors?.[0]?.reason);
 }
 
-// A Google 401 must never surface as our own 401 (the frontend treats 401 as an expired app
-// session); it becomes an actionable message and, through noteCmsAuthFailure, a re-auth flag.
-// A quota 403 is not a permissions problem, so it gets the quota hint instead.
+function isCmsCredentialError(error) {
+  return Boolean(error?.cmsAuthFailed) || upstreamStatus(error) === 401;
+}
+
 function errorMessage(error) {
   const status = upstreamStatus(error);
   const message = rawErrorMessage(error);
-  if (status === 401) return `CMS authorization failed: ${message.replace(/[.\s]+$/, "")}. ${AUTH_HINT}`;
+  if (isCmsCredentialError(error)) {
+    const base = `CMS authorization failed: ${message.replace(/[.\s]+$/, "")}.`;
+    return error?.cmsAuthFailed ? `${base} ${AUTH_HINT}` : base;
+  }
   if (status === 403 && isQuotaReason(errorReason(error))) return message.startsWith(QUOTA_HINT) ? message : `${QUOTA_HINT} (${message})`;
   if (status === 403 && !/^CMS permission denied: /.test(message)) return `CMS permission denied: ${message}`;
   return message;
@@ -99,21 +103,8 @@ function errorMessage(error) {
 
 function errorStatus(error) {
   const status = upstreamStatus(error);
-  if (status === 401) return 424;
+  if (isCmsCredentialError(error)) return 424;
   return status >= 400 && status < 600 ? status : 400;
-}
-
-// Marks the network as needing re-authorization when Google rejected its token.
-function noteCmsAuthFailure(error, networkId) {
-  if (upstreamStatus(error) !== 401) return false;
-  const id = parseId(networkId || error?.networkId);
-  if (!id) return false;
-  db.prepare(`
-    UPDATE networks
-    SET cms_auth_status = 'error', cms_auth_error = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(rawErrorMessage(error), id);
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -643,8 +634,7 @@ function markTrackUploading(trackId) {
   setTrackStatus(trackId, "uploading", "reference");
 }
 
-function markTrackError(trackId, step, error, networkId = null) {
-  noteCmsAuthFailure(error, networkId);
+function markTrackError(trackId, step, error) {
   db.prepare(`
     UPDATE content_id_delivery_tracks
     SET status = 'error', step = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
@@ -685,7 +675,6 @@ function updateTrackAfterRun(trackId, plan, product, result) {
   const ok = !result.error;
   let status = "error";
   if (ok) status = steps.reference && hasLiveReference(row) ? "completed" : "created";
-  if (!ok) noteCmsAuthFailure(result.error, product?.network_id);
 
   db.prepare(`
     UPDATE content_id_delivery_tracks
@@ -787,8 +776,7 @@ function applyReferenceResult(trackId, reference, { fileName, fileSize } = {}) {
   );
 }
 
-function markReferenceError(trackId, error, networkId = null) {
-  noteCmsAuthFailure(error, networkId);
+function markReferenceError(trackId, error) {
   db.prepare(`
     UPDATE content_id_delivery_tracks
     SET status = 'error', step = 'reference', error_message = ?, updated_at = CURRENT_TIMESTAMP
@@ -944,7 +932,7 @@ module.exports = {
   normalizeOwnershipInput,
   normalizeReference,
   normalizeSteps,
-  noteCmsAuthFailure,
+  isCmsCredentialError,
   parseEventRow,
   parseId,
   parseJson,

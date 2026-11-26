@@ -42,6 +42,9 @@ db.exec(`
     value TEXT,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS sidebar_hidden_items (
+    item_id TEXT PRIMARY KEY
+  );
 `);
 
 const channelColumns = db.prepare("PRAGMA table_info(channels)").all();
@@ -228,6 +231,10 @@ db.exec(`
     cms_token_expiry DATETIME,
     cms_authed_at DATETIME,
     cms_auth_error TEXT,
+    cms_auth_generation TEXT,
+    cms_oauth_client_id TEXT,
+    cms_refresh_lock_id TEXT,
+    cms_refresh_lock_until INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -706,6 +713,15 @@ if (!partnerColumns.some((column) => column.name === "contract_file_data_url")) 
 }
 
 const networkColumns = db.prepare("PRAGMA table_info(networks)").all();
+if (!networkColumns.some((column) => column.name === "cms_oauth_client_id")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_oauth_client_id TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_refresh_lock_id")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_refresh_lock_id TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_refresh_lock_until")) {
+  db.exec("ALTER TABLE networks ADD COLUMN cms_refresh_lock_until INTEGER");
+}
 if (!networkColumns.some((column) => column.name === "network_code")) {
   db.exec("ALTER TABLE networks ADD COLUMN network_code TEXT");
 }
@@ -735,6 +751,17 @@ if (!networkColumns.some((column) => column.name === "cms_authed_at")) {
 }
 if (!networkColumns.some((column) => column.name === "cms_auth_error")) {
   db.exec("ALTER TABLE networks ADD COLUMN cms_auth_error TEXT");
+}
+if (!networkColumns.some((column) => column.name === "cms_auth_generation")) {
+  db.transaction(() => db.exec(`
+    ALTER TABLE networks ADD COLUMN cms_auth_generation TEXT;
+    UPDATE networks
+    SET cms_auth_status = 'connected', cms_token_expiry = NULL, cms_auth_error = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE cms_auth_status IN ('pending', 'error')
+      AND cms_authed_at IS NOT NULL
+      AND LENGTH(TRIM(COALESCE(cms_refresh_token, ''))) > 0
+      AND INSTR(LOWER(COALESCE(cms_auth_error, '')), 'invalid_grant') = 0;
+  `))();
 }
 
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_codes_type_status ON content_id_codes(type, status)");
@@ -1137,5 +1164,34 @@ if (!deliveryTrackColumns.some((column) => column.name === "description")) {
 if (!deliveryTrackColumns.some((column) => column.name === "source_url")) {
   db.exec("ALTER TABLE content_id_delivery_tracks ADD COLUMN source_url TEXT");
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ownership_channels (
+    channel_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    owner_count INTEGER NOT NULL DEFAULT 0,
+    checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS ownership_channel_owners (
+    channel_id TEXT NOT NULL REFERENCES ownership_channels(channel_id) ON DELETE CASCADE,
+    owner_id TEXT NOT NULL,
+    cms_name TEXT NOT NULL,
+    cms_name_key TEXT NOT NULL,
+    email TEXT,
+    evidence INTEGER NOT NULL,
+    asset_url TEXT,
+    video_id TEXT,
+    PRIMARY KEY (channel_id, owner_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_ownership_cms_name ON ownership_channel_owners(channel_id, cms_name_key);
+  CREATE TABLE IF NOT EXISTS ownership_api_keys (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    prefix TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TEXT
+  );
+`);
 
 module.exports = db;

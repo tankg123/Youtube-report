@@ -1,0 +1,1459 @@
+/*
+ * PDF editor (/pdf): the signing feature (signing/): the "Sign with certificate" drawer, the rectangle of a
+ * visible signature on a page, the Signatures panel, the banner, the trusted certificates and the signature
+ * picture dialog. Every selector starts with .pdfx-root; colours are the tokens of shell.css (light and dark).
+ * What sits ON a page or shows a picture of a signature uses fixed light colours: paper never follows the theme.
+ */
+
+/* ---- the drawer ---------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-side.pdfx-side-drawer[data-drawer-id="certSign"] {
+  width: 360px;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-side.pdfx-side-drawer[data-drawer-id="certSign"] {
+  width: auto;
+}
+
+/* between 900 and 1199 px the properties panel lies over the pages; the signing drawer does not: the place of
+   the signature is chosen on the pages, so they must stay visible next to it (the pages get narrower instead) */
+.pdfx-root[data-layout="medium"] .pdfx-side.pdfx-side-drawer[data-drawer-id="certSign"] {
+  position: relative;
+  width: 340px;
+  box-shadow: none;
+}
+
+/* in the position step of a narrow window the pages must stay reachable under the sheet */
+.pdfx-root[data-layout="narrow"] .pdfx-side.pdfx-side-drawer[data-drawer-id="certSign"]:has(.pdfx-sign-drawer[data-step="3"]) {
+  max-height: 42%;
+}
+
+.pdfx-root .pdfx-sign-drawer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-sign-drawer .pdfx-panel-head > svg {
+  flex: none;
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-sign-steps {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--pdfx-border);
+  list-style: none;
+}
+
+.pdfx-root .pdfx-sign-steps li {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  color: var(--pdfx-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.pdfx-root .pdfx-sign-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 50%;
+  background: var(--pdfx-surface);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-sign-step-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-sign-steps li[data-state="current"] {
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-sign-steps li[data-state="current"] .pdfx-sign-step-number {
+  border-color: var(--pdfx-accent);
+  background: var(--pdfx-accent);
+  color: var(--pdfx-on-accent);
+}
+
+.pdfx-root .pdfx-sign-steps li[data-state="done"] {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-sign-steps li[data-state="done"] .pdfx-sign-step-number {
+  border-color: var(--pdfx-accent-ink);
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-sign-steps li[data-state="skipped"] {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.pdfx-root .pdfx-sign-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.pdfx-root .pdfx-sign-heading {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-sign-heading:focus {
+  outline: none;
+}
+
+.pdfx-root .pdfx-sign-step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pdfx-root .pdfx-sign-lead {
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-sign-hint {
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-sign-error {
+  color: var(--pdfx-danger);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-error:empty {
+  display: none;
+}
+
+.pdfx-root .pdfx-sign-warning,
+.pdfx-root .pdfx-sign-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--pdfx-warning-soft);
+  color: var(--pdfx-text);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-sign-warning > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-sign-note {
+  background: var(--pdfx-info-soft);
+}
+
+.pdfx-root .pdfx-sign-note > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-sign-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0 6px 24px;
+}
+
+.pdfx-root .pdfx-sign-form .pdfx-input,
+.pdfx-root .pdfx-sign-group .pdfx-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-sign-form select.pdfx-input,
+.pdfx-root .pdfx-sign-group select.pdfx-input {
+  padding-right: 4px;
+}
+
+.pdfx-root .pdfx-sign-label {
+  margin-top: 2px;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-sublabel {
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-sign-row-wrap {
+  flex-wrap: wrap;
+}
+
+.pdfx-root .pdfx-sign-file {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pdfx-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-sign-password {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdfx-root .pdfx-sign-password .pdfx-input {
+  flex: 1 1 auto;
+}
+
+.pdfx-root .pdfx-sign-password .pdfx-btn {
+  min-width: 30px;
+  height: 30px;
+}
+
+.pdfx-root .pdfx-sign-drawer .pdfx-input[aria-invalid="true"] {
+  border-color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-sign-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pdfx-root .pdfx-sign-actions-start {
+  justify-content: flex-start;
+}
+
+.pdfx-root .pdfx-sign-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 8px;
+}
+
+.pdfx-root .pdfx-sign-columns > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-sign-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-sign-source,
+.pdfx-root .pdfx-sign-check,
+.pdfx-root .pdfx-sign-segment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sign-source {
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-drawer input[type="radio"],
+.pdfx-root .pdfx-sign-drawer input[type="checkbox"],
+.pdfx-root .pdfx-sig-dialog input[type="radio"],
+.pdfx-root .pdfx-sig-dialog input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--pdfx-accent);
+}
+
+.pdfx-root .pdfx-sign-drawer input:focus-visible,
+.pdfx-root .pdfx-sign-drawer select:focus-visible,
+.pdfx-root .pdfx-sig-dialog input:focus-visible,
+.pdfx-root .pdfx-signatures button:focus-visible,
+.pdfx-root .pdfx-sign-option:focus-visible,
+.pdfx-root .pdfx-sign-saved-item:focus-visible,
+.pdfx-root .pdfx-sig-saved-item button:focus-visible,
+.pdfx-root .pdfx-sig-face:focus-visible,
+.pdfx-root .pdfx-sig-tab:focus-visible,
+.pdfx-root .pdfx-sig-pad:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: 2px;
+}
+
+.pdfx-root .pdfx-sign-check input:disabled + span {
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-sign-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+  background: var(--pdfx-surface-2);
+}
+
+.pdfx-root .pdfx-sign-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-sign-card-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.pdfx-root .pdfx-sign-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pdfx-root .pdfx-sign-facts,
+.pdfx-root .pdfx-signature-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.pdfx-root .pdfx-sign-facts > div,
+.pdfx-root .pdfx-signature-details > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pdfx-root .pdfx-sign-facts dt,
+.pdfx-root .pdfx-signature-details dt {
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-sign-facts dd,
+.pdfx-root .pdfx-signature-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-sign-backup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--pdfx-warning-soft);
+  font-size: 12.5px;
+}
+
+.pdfx-root .pdfx-sign-backup[data-state="downloaded"] {
+  background: var(--pdfx-success-soft);
+}
+
+.pdfx-root .pdfx-sign-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pdfx-root .pdfx-sign-group legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-sign-segments {
+  display: flex;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-sign-segment {
+  flex: 1 1 0;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 6px;
+  background: var(--pdfx-surface);
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-segment[data-checked="true"] {
+  border-color: var(--pdfx-accent);
+  background: var(--pdfx-accent-soft);
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-sign-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-sign-choices-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 8px;
+}
+
+/* a picture of a signature: on a light checkerboard, whatever the theme */
+.pdfx-root .pdfx-sign-picture,
+.pdfx-root .pdfx-sign-saved-item,
+.pdfx-root .pdfx-sig-checker {
+  background-color: #ffffff;
+  background-image: conic-gradient(#e2e8f0 25%, #ffffff 0 50%, #e2e8f0 0 75%, #ffffff 0);
+  background-size: 14px 14px;
+  color: #475569;
+  color-scheme: light;
+}
+
+.pdfx-root .pdfx-sign-picture {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-sign-picture img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdfx-root .pdfx-sign-saved {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-sign-saved-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 3px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sign-saved-item[aria-pressed="true"] {
+  border-color: var(--pdfx-accent);
+  box-shadow: 0 0 0 2px var(--pdfx-accent-soft-2);
+}
+
+.pdfx-root .pdfx-sign-saved-item img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* the stamp as it will be on the paper: always on white */
+.pdfx-root .pdfx-sign-preview {
+  width: 100%;
+  max-height: 180px;
+  overflow: hidden;
+  border: 1px dashed #94a3b8;
+  border-radius: 2px;
+  background: #ffffff;
+  color-scheme: light;
+}
+
+.pdfx-root .pdfx-sign-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pdfx-root .pdfx-sign-preview-small {
+  width: 180px;
+  max-width: 100%;
+}
+
+.pdfx-root .pdfx-sign-numbers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 8px;
+}
+
+.pdfx-root .pdfx-sign-number {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-sign-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-sign-summary h3 {
+  color: var(--pdfx-text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pdfx-root .pdfx-sign-filename {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdfx-root .pdfx-sign-filename span {
+  flex: none;
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-sign-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 6px;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-sign-stages li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-sign-stages li[data-state="running"] {
+  color: var(--pdfx-accent-ink);
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-stages li[data-state="done"] {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-sign-stages li[data-state="failed"] {
+  color: var(--pdfx-danger);
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-sign-foot-hint {
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-sign-foot-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-sign-foot-buttons .pdfx-btn-primary {
+  margin-left: auto;
+}
+
+.pdfx-root .pdfx-sign-foot-buttons .pdfx-btn-primary[aria-disabled="true"] {
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text-3);
+  cursor: not-allowed;
+}
+
+/* ---- the question before the drawer --------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-sign-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pdfx-root .pdfx-sign-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sign-option:hover {
+  border-color: var(--pdfx-accent);
+  background: var(--pdfx-accent-soft);
+}
+
+.pdfx-root .pdfx-sign-option strong {
+  font-size: 14px;
+}
+
+.pdfx-root .pdfx-sign-option span {
+  color: var(--pdfx-text-2);
+  font-size: 12.5px;
+}
+
+/* ---- on a page: the rectangle of a visible signature ------------------------------------------------------------ */
+
+.pdfx-root .pdfx-sign-capture {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  cursor: crosshair;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pdfx-root .pdfx-sign-field {
+  position: absolute;
+  z-index: 21;
+  box-sizing: border-box;
+  outline: 1.5px dashed #2563eb;
+  outline-offset: 0;
+  background: rgb(37 99 235 / 0.06);
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-sign-field[data-active="true"] {
+  cursor: move;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.pdfx-root .pdfx-sign-field[data-active="true"]:focus-visible {
+  outline: 2px solid #1d4ed8;
+  box-shadow: 0 0 0 4px rgb(37 99 235 / 0.25);
+}
+
+.pdfx-root .pdfx-sign-field img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.pdfx-root .pdfx-sign-handle {
+  position: absolute;
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid #1d4ed8;
+  border-radius: 2px;
+  background: #ffffff;
+  touch-action: none;
+}
+
+.pdfx-root .pdfx-sign-handle[data-sign-handle="nw"] { top: -6px; left: -6px; }
+.pdfx-root .pdfx-sign-handle[data-sign-handle="n"] { top: -6px; left: calc(50% - 5.5px); }
+.pdfx-root .pdfx-sign-handle[data-sign-handle="ne"] { top: -6px; right: -6px; }
+.pdfx-root .pdfx-sign-handle[data-sign-handle="e"] { top: calc(50% - 5.5px); right: -6px; }
+.pdfx-root .pdfx-sign-handle[data-sign-handle="se"] { right: -6px; bottom: -6px; }
+.pdfx-root .pdfx-sign-handle[data-sign-handle="s"] { bottom: -6px; left: calc(50% - 5.5px); }
+.pdfx-root .pdfx-sign-handle[data-sign-handle="sw"] { bottom: -6px; left: -6px; }
+.pdfx-root .pdfx-sign-handle[data-sign-handle="w"] { top: calc(50% - 5.5px); left: -6px; }
+
+.pdfx-root .pdfx-sign-flash {
+  position: absolute;
+  z-index: 22;
+  box-sizing: border-box;
+  border: 3px solid #f59e0b;
+  border-radius: 4px;
+  box-shadow: 0 0 0 4px rgb(245 158 11 / 0.3);
+  pointer-events: none;
+  animation: pdfx-sign-flash 2s ease-out both;
+}
+
+@keyframes pdfx-sign-flash {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- banner ------------------------------------------------------------------------------------------------------ */
+
+.pdfx-root .pdfx-sign-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 12px;
+  background: var(--pdfx-info-soft);
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-sign-banner > svg {
+  flex: none;
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-sign-banner p {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sign-banner-edited {
+  font-weight: 400;
+}
+
+.pdfx-root .pdfx-sign-banner[data-tone="success"] {
+  background: var(--pdfx-success-soft);
+}
+
+.pdfx-root .pdfx-sign-banner[data-tone="success"] > svg {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-sign-banner[data-tone="warning"] {
+  background: var(--pdfx-warning-soft);
+}
+
+.pdfx-root .pdfx-sign-banner[data-tone="warning"] > svg {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-sign-banner[data-tone="error"] {
+  background: var(--pdfx-danger-soft);
+}
+
+.pdfx-root .pdfx-sign-banner[data-tone="error"] > svg {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-sign-banner-button {
+  height: 26px;
+  font-size: 12px;
+}
+
+/* ---- the Signatures panel ---------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-signatures {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.pdfx-root .pdfx-signatures-summary,
+.pdfx-root .pdfx-signatures-edited {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: var(--pdfx-info-soft);
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-signatures-summary > svg,
+.pdfx-root .pdfx-signatures-edited > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-signatures-summary[data-tone="success"] {
+  background: var(--pdfx-success-soft);
+}
+
+.pdfx-root .pdfx-signatures-summary[data-tone="success"] > svg {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-signatures-summary[data-tone="warning"],
+.pdfx-root .pdfx-signatures-edited {
+  background: var(--pdfx-warning-soft);
+}
+
+.pdfx-root .pdfx-signatures-summary[data-tone="warning"] > svg,
+.pdfx-root .pdfx-signatures-edited > svg {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-signatures-summary[data-tone="error"] {
+  background: var(--pdfx-danger-soft);
+}
+
+.pdfx-root .pdfx-signatures-summary[data-tone="error"] > svg {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-signatures-edited {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.pdfx-root .pdfx-signatures-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-signatures-file h3 {
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-signatures-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-signatures-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 8px 6px;
+  color: var(--pdfx-text-2);
+  text-align: center;
+}
+
+.pdfx-root .pdfx-signatures-empty + .pdfx-signatures-actions {
+  justify-content: center;
+}
+
+.pdfx-root .pdfx-signature {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+  background: var(--pdfx-surface);
+  font-size: 12.5px;
+}
+
+.pdfx-root .pdfx-signature[data-level="invalid"] {
+  border-color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-signature-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-signature-head > svg {
+  flex: none;
+}
+
+/* a long level ("Hợp lệ, chưa xác minh người ký") wraps beside its icon, not under it; chips go to the next row */
+.pdfx-root .pdfx-signature-head > strong {
+  flex: 1 1 8em;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-signature-head[data-tone="success"] {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-signature-head[data-tone="warning"] {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-signature-head[data-tone="danger"] {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-signature-head[data-tone="neutral"] {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-signature-who {
+  overflow-wrap: anywhere;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-signature-org {
+  display: block;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.pdfx-root .pdfx-signature-line {
+  overflow-wrap: anywhere;
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-signature-muted {
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-signature-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-signature-check > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-signature-check[data-tone="ok"] > svg {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-signature-check[data-tone="warn"] > svg {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-signature-check[data-tone="bad"] > svg {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-signature-check[data-tone="info"] > svg {
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-signature-changes {
+  margin: 0;
+  padding-left: 34px;
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-signature-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 0 20px;
+  padding: 0;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-signature-facts li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pdfx-root .pdfx-signature-facts li[data-state="ok"] svg {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-signature-facts li[data-state="bad"] {
+  color: var(--pdfx-danger);
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-signature-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.pdfx-root .pdfx-signature-actions .pdfx-btn {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-signature-details {
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--pdfx-border);
+  font-size: 12px;
+}
+
+/* the panel is narrow: the name of a detail stands above its value */
+.pdfx-root .pdfx-signature-details > div {
+  display: block;
+}
+
+.pdfx-root .pdfx-signature-details dt {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-mono {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.pdfx-root .pdfx-signatures-note {
+  padding: 0 2px;
+}
+
+/* ---- trusted certificates ------------------------------------------------------------------------------------------ */
+
+.pdfx-root .pdfx-trust {
+  border-top: 1px solid var(--pdfx-border);
+  padding-top: 8px;
+}
+
+.pdfx-root .pdfx-trust-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pdfx-text);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-trust-toggle:hover {
+  background: var(--pdfx-surface-3);
+}
+
+.pdfx-root .pdfx-trust-toggle span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-trust-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 2px 2px;
+}
+
+.pdfx-root .pdfx-trust-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-trust-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px 4px 6px 8px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 6px;
+}
+
+.pdfx-root .pdfx-trust-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-trust-text strong {
+  overflow-wrap: anywhere;
+  color: var(--pdfx-text);
+  font-size: 12.5px;
+}
+
+.pdfx-root .pdfx-trust-message {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-trust-message:empty {
+  display: none;
+}
+
+.pdfx-root .pdfx-trust-message[data-tone="ok"] {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-trust-message[data-tone="bad"] {
+  color: var(--pdfx-danger);
+}
+
+/* ---- the signature picture dialog ------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-sig-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--pdfx-text);
+}
+
+/* the dialog frame spaces the children of its body: here the gap above does that */
+.pdfx-root .pdfx-dialog-body > .pdfx-sig-dialog > * + * {
+  margin-top: 0;
+}
+
+.pdfx-root .pdfx-sig-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-sig-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--pdfx-text-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sig-tab:hover {
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-sig-tab[aria-selected="true"] {
+  border-bottom-color: var(--pdfx-accent);
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-sig-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 250px;
+}
+
+/* the pad is paper: light in both themes */
+.pdfx-root .pdfx-sig-pad {
+  position: relative;
+  width: 100%;
+  height: 190px;
+  overflow: hidden;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+  background: #ffffff;
+  color-scheme: light;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pdfx-root .pdfx-sig-pad canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pdfx-root .pdfx-sig-pad-line {
+  position: absolute;
+  right: 24px;
+  bottom: 48px;
+  left: 24px;
+  border-bottom: 1px dashed #cbd5e1;
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-sig-pad-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-sig-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.pdfx-root .pdfx-sig-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sig-controls input[type="range"] {
+  width: 96px;
+  accent-color: var(--pdfx-accent);
+}
+
+.pdfx-root .pdfx-sig-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 50%;
+}
+
+.pdfx-root .pdfx-sig-buttons {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.pdfx-root .pdfx-sig-buttons .pdfx-btn {
+  height: 30px;
+  padding: 0 10px;
+}
+
+.pdfx-root .pdfx-sig-faces {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pdfx-root .pdfx-sig-face {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sig-face[aria-pressed="true"] {
+  border-color: var(--pdfx-accent);
+  box-shadow: 0 0 0 2px var(--pdfx-accent-soft-2);
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-sig-face-picture {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  padding: 6px;
+  border-radius: 4px;
+  background: #ffffff;
+  color-scheme: light;
+}
+
+.pdfx-root .pdfx-sig-face-picture img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdfx-root .pdfx-sig-checker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 170px;
+  padding: 8px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-sig-checker img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdfx-root .pdfx-sig-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pdfx-root .pdfx-sig-field .pdfx-input {
+  height: 36px;
+  font-size: 15px;
+}
+
+.pdfx-root .pdfx-sig-saved {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pdfx-root .pdfx-sig-saved-item {
+  position: relative;
+}
+
+.pdfx-root .pdfx-sig-saved-item .pdfx-sig-saved-use {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 54px;
+  padding: 4px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sig-saved-item .pdfx-sig-saved-use:hover {
+  border-color: var(--pdfx-accent);
+}
+
+.pdfx-root .pdfx-sig-saved-item img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdfx-root .pdfx-sig-saved-item .pdfx-sig-saved-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 50%;
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text-2);
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-sig-saved-item .pdfx-sig-saved-remove:hover {
+  border-color: var(--pdfx-danger);
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-sig-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--pdfx-info-soft);
+  font-size: 12.5px;
+}
+
+.pdfx-root .pdfx-sig-note > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-sig-error {
+  color: var(--pdfx-danger);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-sig-error:empty {
+  display: none;
+}
+
+/* ---- "Add date" next to a selected signature picture --------------------------------------------------------------- */
+
+.pdfx-root .pdfx-sig-datebar {
+  position: absolute;
+  z-index: 6;
+  display: inline-flex;
+  pointer-events: auto;
+}
+
+.pdfx-root .pdfx-sig-datebar .pdfx-btn {
+  height: 28px;
+  padding: 0 8px;
+  border-color: var(--pdfx-border-strong);
+  background: var(--pdfx-surface);
+  box-shadow: var(--pdfx-shadow);
+  color: var(--pdfx-text);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfx-root .pdfx-sign-flash {
+    animation: none;
+  }
+}

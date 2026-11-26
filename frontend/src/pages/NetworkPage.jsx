@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Edit3, KeyRound, Loader2, Network, Plus, ShieldCheck, Trash2, Unplug, X } from "lucide-react";
+import { CheckCircle2, Edit3, KeyRound, Loader2, Network, Plus, RefreshCw, ShieldCheck, Trash2, Unplug, X } from "lucide-react";
 import api from "../api/api";
+import { useI18n } from "../context/I18nContext";
 
 const emptyNetwork = {
   name: "",
@@ -9,7 +10,7 @@ const emptyNetwork = {
 };
 
 const apiLabels = [
-  { label: "Content ID API", scopes: ["https://www.googleapis.com/auth/youtubepartner", "https://www.googleapis.com/auth/youtubepartner-channel-audit"] },
+  { label: "Content ID API", scopes: ["https://www.googleapis.com/auth/youtubepartner"] },
   { label: "Analytics API", scopes: ["https://www.googleapis.com/auth/yt-analytics.readonly", "https://www.googleapis.com/auth/yt-analytics-monetary.readonly"] },
   { label: "YouTube Data API", scopes: ["https://www.googleapis.com/auth/youtube.readonly"] },
   { label: "YouTube CMS", scopes: ["https://www.googleapis.com/auth/youtube"] }
@@ -27,7 +28,16 @@ function parseGrantedApis(scopes = "") {
   return apiLabels.filter((item) => item.scopes.some((scope) => granted.has(scope)));
 }
 
+function cmsAuthMessage() {
+  const params = new URLSearchParams(window.location.search);
+  const status = params.get("cms_auth");
+  if (status === "success") return "CMS auth connected successfully";
+  if (status === "error") return params.get("message") || "CMS auth failed";
+  return "";
+}
+
 export default function NetworkPage() {
+  const { t, tm } = useI18n();
   const [networks, setNetworks] = useState([]);
   const [form, setForm] = useState(emptyNetwork);
   const [editing, setEditing] = useState(null);
@@ -35,23 +45,24 @@ export default function NetworkPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [authingId, setAuthingId] = useState(null);
-  const [message, setMessage] = useState("");
+  const [testingId, setTestingId] = useState(null);
+  const [message, setMessage] = useState(cmsAuthMessage);
 
   const sortedNetworks = useMemo(
     () => [...networks].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })),
     [networks]
   );
 
-  async function fetchNetworks() {
-    try {
-      setLoading(true);
-      const res = await api.get("/reports/networks");
-      setNetworks(res.data.data || []);
-    } catch (error) {
-      setMessage(error.response?.data?.message || "Could not load networks");
-    } finally {
-      setLoading(false);
-    }
+  function loadNetworks() {
+    return api.get("/reports/networks")
+      .then((res) => setNetworks(res.data.data || []))
+      .catch((error) => setMessage(error.response?.data?.message || "Could not load networks"))
+      .finally(() => setLoading(false));
+  }
+
+  function fetchNetworks() {
+    setLoading(true);
+    return loadNetworks();
   }
 
   function openCreate() {
@@ -118,6 +129,19 @@ export default function NetworkPage() {
     }
   }
 
+  async function testSavedGrant(network) {
+    setTestingId(network.id);
+    try {
+      await api.post(`/reports/networks/${network.id}/cms-auth/retry`, {}, { timeout: 120000 });
+      setMessage(t("Google renewed the saved token for {network}.", { network: network.name }));
+    } catch (error) {
+      setMessage(tm(error.response?.data?.message || error.message));
+    } finally {
+      await loadNetworks();
+      setTestingId(null);
+    }
+  }
+
   async function disconnectCms(network) {
     if (!window.confirm(`Disconnect CMS auth for ${network.name}?`)) return;
 
@@ -136,16 +160,11 @@ export default function NetworkPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const cmsAuth = params.get("cms_auth");
-    if (cmsAuth === "success") {
-      setMessage("CMS auth connected successfully");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-    if (cmsAuth === "error") {
-      setMessage(params.get("message") || "CMS auth failed");
+    if (cmsAuth === "success" || cmsAuth === "error") {
       window.history.replaceState({}, "", window.location.pathname);
     }
 
-    fetchNetworks();
+    loadNetworks();
   }, []);
 
   return (
@@ -237,7 +256,7 @@ export default function NetworkPage() {
                           <p>{network.cms_authed_at || "-"}</p>
                         </div>
                         <div>
-                          <p className="font-black uppercase text-slate-400">Token expires</p>
+                          <p className="font-black uppercase text-slate-400">Access token expires</p>
                           <p>{network.cms_token_expiry || "-"}</p>
                         </div>
                       </div>
@@ -251,10 +270,21 @@ export default function NetworkPage() {
                   {network.cms_auth_error ? <div className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{network.cms_auth_error}</div> : null}
 
                   <div className="mt-4 flex flex-wrap gap-2">
+                    {Boolean(network.has_saved_grant) && ["connected", "error"].includes(network.cms_auth_status) && (
+                      <button
+                        type="button"
+                        onClick={() => testSavedGrant(network)}
+                        disabled={testingId !== null || authingId !== null}
+                        className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-black text-blue-700 disabled:opacity-60"
+                      >
+                        <RefreshCw size={16} className={testingId === network.id ? "animate-spin" : undefined} />
+                        {t("Test saved connection")}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => startCmsAuth(network)}
-                      disabled={authingId === network.id}
+                      disabled={authingId === network.id || testingId === network.id}
                       className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-60"
                     >
                       {authingId === network.id ? <Loader2 className="animate-spin" size={16} /> : <KeyRound size={16} />}
@@ -264,7 +294,7 @@ export default function NetworkPage() {
                       <button
                         type="button"
                         onClick={() => disconnectCms(network)}
-                        disabled={authingId === network.id}
+                        disabled={authingId === network.id || testingId === network.id}
                         className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-4 py-2 text-sm font-black text-red-600 hover:bg-red-100 disabled:opacity-60"
                       >
                         <Unplug size={16} />

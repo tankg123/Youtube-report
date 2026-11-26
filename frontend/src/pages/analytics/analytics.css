@@ -1,0 +1,145 @@
+/* Analytics module — chart tokens and chart-only rules. Layout, typography and controls are Tailwind
+   (the global .theme-dark overrides apply); only what Tailwind cannot express lives here: the series
+   palette, SVG chrome and the coverage-calendar cell states. The eight series slots are a fixed order
+   validated with the dataviz six checks on both surfaces (#ffffff light, #0f172a dark) — assign them in
+   sequence, never cycle; slots 3–5 sit below 3:1 on white, which the "View data" tables and visible
+   value labels relieve. Status tones (coverage states) are deliberately not series colours. */
+:root {
+  --an-surface: #ffffff;
+  --an-ink-muted: #64748b;
+  --an-grid: #e2e8f0;
+  --an-axis: #cbd5e1;
+  --an-series-1: #2a78d6;
+  --an-series-2: #eb6834;
+  --an-series-3: #1baf7a;
+  --an-series-4: #eda100;
+  --an-series-5: #e87ba4;
+  --an-series-6: #008300;
+  --an-series-7: #6250d6;
+  --an-series-8: #e34948;
+  --an-previous: #94a3b8;
+  --an-area-opacity: 0.12;
+  --an-cov-covered-bg: #d1fae5;
+  --an-cov-covered-ink: #065f46;
+  --an-cov-drift-bg: #fef3c7;
+  --an-cov-drift-ink: #92400e;
+  --an-cov-missing: #cbd5e1;
+  --an-cov-pending-bg: #f1f5f9;
+  --an-cov-pending-ink: #94a3b8;
+  --an-cov-money: #2563eb;
+}
+
+.theme-dark {
+  --an-surface: #0f172a;
+  --an-ink-muted: #94a3b8;
+  --an-grid: #1e293b;
+  --an-axis: #334155;
+  --an-series-1: #3987e5;
+  --an-series-2: #d95926;
+  --an-series-3: #199e70;
+  --an-series-4: #c98500;
+  --an-series-5: #d55181;
+  --an-series-6: #008300;
+  --an-series-7: #9085e9;
+  --an-series-8: #e66767;
+  --an-previous: #64748b;
+  --an-area-opacity: 0.2;
+  --an-cov-covered-bg: #064e3b;
+  --an-cov-covered-ink: #a7f3d0;
+  --an-cov-drift-bg: #78350f;
+  --an-cov-drift-ink: #fde68a;
+  --an-cov-missing: #475569;
+  --an-cov-pending-bg: #1e293b;
+  --an-cov-pending-ink: #64748b;
+  --an-cov-money: #60a5fa;
+}
+
+/* Trend chart: one tab stop, the SVG itself carries the focus ring. */
+.an-chart {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+  touch-action: pan-y;
+}
+.an-chart:focus {
+  outline: none;
+}
+.an-chart:focus-visible {
+  outline: 2px solid var(--an-series-1);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+.an-chart text {
+  font-family: inherit;
+  font-size: 11px;
+  fill: var(--an-ink-muted);
+}
+
+/* Marks: hairline recessive grid, 2px lines, washed area, surface-ringed markers. */
+.an-grid {
+  stroke: var(--an-grid);
+  stroke-width: 1;
+}
+.an-axis,
+.an-crosshair {
+  stroke: var(--an-axis);
+  stroke-width: 1;
+}
+.an-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.an-line-previous {
+  stroke: var(--an-previous);
+  stroke-dasharray: 4 4;
+}
+.an-area {
+  opacity: var(--an-area-opacity);
+}
+.an-marker {
+  stroke: var(--an-surface);
+  stroke-width: 2;
+}
+.an-donut-segment {
+  transition: stroke-width 0.15s ease, opacity 0.15s ease;
+}
+.an-donut-segment.is-dim {
+  opacity: 0.35;
+}
+
+/* Coverage calendar cells and legend swatches (five states + the revenue dot). */
+.an-cov-covered {
+  background: var(--an-cov-covered-bg);
+  color: var(--an-cov-covered-ink);
+}
+.an-cov-drift {
+  background: var(--an-cov-drift-bg);
+  color: var(--an-cov-drift-ink);
+}
+.an-cov-missing {
+  box-shadow: inset 0 0 0 1px var(--an-cov-missing);
+  color: var(--an-ink-muted);
+}
+.an-cov-pending {
+  background-color: var(--an-cov-pending-bg);
+  background-image: repeating-linear-gradient(135deg, var(--an-cov-pending-ink) 0 1px, transparent 1px 5px);
+  color: var(--an-ink-muted);
+}
+.an-cov-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--an-cov-money);
+  box-shadow: 0 0 0 1.5px var(--an-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .an-donut-segment {
+    transition: none;
+  }
+}

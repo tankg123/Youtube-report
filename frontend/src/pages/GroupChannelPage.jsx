@@ -858,7 +858,8 @@ function GroupForm({ partners, collaborators, isEditing, value, onChange, revenu
 
 export default function GroupChannelPage() {
   const { canViewReports } = useAuth();
-  const { settings } = useSystemSettings();
+  const { settings, isSidebarVisible } = useSystemSettings();
+  const showDetail = isSidebarVisible("/groups#detail");
   const { t, tk, tm } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState(currentMonth());
@@ -993,7 +994,7 @@ export default function GroupChannelPage() {
   }
 
   async function fetchDetail(id = selectedId) {
-    if (!id) {
+    if (!id || !showDetail) {
       setDetail(null);
       return;
     }
@@ -1288,7 +1289,7 @@ export default function GroupChannelPage() {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, month]);
+  }, [selectedId, month, showDetail]);
 
   return (
     <div className="p-5 lg:p-8">
@@ -1331,8 +1332,8 @@ export default function GroupChannelPage() {
 
       {message && <div className="mb-5 bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-5 py-4 font-medium">{tm(message)}</div>}
 
-      <div className={groupListCollapsed ? "grid gap-5" : "grid xl:grid-cols-[360px_1fr] gap-5"}>
-        {!groupListCollapsed && (
+      <div className={groupListCollapsed || !showDetail ? "grid gap-5" : "grid xl:grid-cols-[360px_1fr] gap-5"}>
+        {(!groupListCollapsed || !showDetail) && (
         <aside className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
             <Users size={18} />
@@ -1358,6 +1359,7 @@ export default function GroupChannelPage() {
             <button
               type="button"
               onClick={() => setGroupListCollapsed(true)}
+              disabled={!showDetail}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-blue-600"
               title={t("Hide group list")}
             >
@@ -1375,6 +1377,7 @@ export default function GroupChannelPage() {
               {filteredSortedGroups.map((group) => (
                 <button
                   key={group.id}
+                  disabled={!showDetail}
                   onClick={() => {
                     setSelectedId(group.id);
                     setSearchParams({ group_id: String(group.id), month });
@@ -1400,7 +1403,7 @@ export default function GroupChannelPage() {
         </aside>
         )}
 
-        <main className="space-y-5">
+        {showDetail && <main className="space-y-5">
           {groupListCollapsed && (
             <button
               type="button"
@@ -1647,7 +1650,7 @@ export default function GroupChannelPage() {
               </section>
             </>
           )}
-        </main>
+        </main>}
       </div>
 
       {groupModal && (

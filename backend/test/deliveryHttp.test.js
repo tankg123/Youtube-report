@@ -239,3 +239,43 @@ test("a draft audio PUT (no product yet) is stored under _drafts through the sam
   assert.equal(fs.existsSync(stored), false);
   assert.equal(memoryDb.prepare("SELECT COUNT(*) AS count FROM content_id_delivery_audio_uploads").get().count, 0);
 });
+
+test("an 80 MiB video draft PUT bypasses the 25 MB JSON limit and preserves every byte", async () => {
+  // Synthetic MP4 container for transport testing: ftyp + large mdat + moov/mvhd.
+  // The duration probe sees 60 seconds; the media payload is not a playable video.
+  const body = Buffer.alloc(80 * 1024 * 1024, 0x5a);
+  const moovOffset = body.length - 116;
+  body.fill(0, 0, 24);
+  body.writeUInt32BE(24, 0);
+  body.write("ftypisom", 4, "latin1");
+  body.write("isommp42", 16, "latin1");
+  body.writeUInt32BE(moovOffset - 24, 24);
+  body.write("mdat", 28, "latin1");
+  body.fill(0, moovOffset);
+  body.writeUInt32BE(116, moovOffset);
+  body.write("moov", moovOffset + 4, "latin1");
+  body.writeUInt32BE(108, moovOffset + 8);
+  body.write("mvhd", moovOffset + 12, "latin1");
+  body.writeUInt32BE(1000, moovOffset + 28);
+  body.writeUInt32BE(60000, moovOffset + 32);
+
+  const query = new URLSearchParams({ file_name: "large-video.mp4", file_size: String(body.length), media_kind: "video" });
+  const res = await request(port, {
+    method: "PUT",
+    path: `/api/content-id/delivery/audio-uploads?${query}`,
+    headers: { "Content-Type": "video/mp4", "Content-Length": String(body.length) },
+    body
+  });
+  assert.equal(res.status, 200, res.body.toString("utf8"));
+  const payload = JSON.parse(res.body.toString("utf8"));
+  assert.equal(payload.success, true);
+  assert.equal(payload.upload.file_size, body.length);
+  assert.equal(payload.upload.file_mime, "video/mp4");
+  assert.equal(payload.upload.file_sha256, sha256(body));
+  const stored = path.join(MEDIA_DIR, "_drafts", `${payload.upload.id}__large-video.mp4`);
+  assert.equal(sha256(fs.readFileSync(stored)), sha256(body));
+
+  const removed = await request(port, { method: "DELETE", path: `/api/content-id/delivery/audio-uploads/${payload.upload.id}` });
+  assert.equal(removed.status, 200);
+  assert.equal(fs.existsSync(stored), false);
+});

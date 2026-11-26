@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import axios from "axios";
+import { SESSION_ENDED_EVENT, keepsPageOnSessionEnd, loginPathFor } from "../utils/returnTo";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const BACKEND_API_KEY = import.meta.env.VITE_BACKEND_API_KEY || "";
@@ -162,13 +163,22 @@ export function AuthProvider({ children }) {
 
     const timeoutId = window.setTimeout(() => {
       logout();
-      if (!window.location.pathname.includes("/login")) {
-        window.location.href = "/login";
+      const { pathname } = window.location;
+      // a stand-alone tool (/pdf) holds unsaved work in memory: it stays and tells the user itself
+      if (!pathname.includes("/login") && !keepsPageOnSessionEnd(pathname)) {
+        window.location.href = loginPathFor(pathname);
       }
     }, delay);
 
     return () => window.clearTimeout(timeoutId);
   }, [token]);
+
+  // api.js answers a 401 on a page that stays (see keepsPageOnSessionEnd) with this event instead of a redirect
+  useEffect(() => {
+    const onSessionEnded = () => logout();
+    window.addEventListener(SESSION_ENDED_EVENT, onSessionEnded);
+    return () => window.removeEventListener(SESSION_ENDED_EVENT, onSessionEnded);
+  }, []);
 
   return (
     (() => {
@@ -215,6 +225,7 @@ export function AuthProvider({ children }) {
         isReadOnly,
         isManager: isReportManager,
         canViewReports: isAdmin || isReportManager,
+        canViewAnalytics: isAdmin || isReportManager || isContentIdRole,
         canViewEmail: isAdmin || isReportManager,
         canViewPartnerDashboard,
         canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,

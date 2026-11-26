@@ -1,13 +1,12 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import {
   BrowserRouter,
   Routes,
   Route,
-  Link,
   useLocation,
   Navigate
 } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Clapperboard, CloudUpload, Database, Disc3, FileAudio, FileSignature, FileSpreadsheet, Landmark, Network, PackageSearch, Percent, ReceiptText, Settings, Tags, Users, UsersRound, Video, WalletCards, UserRound, Loader2, FileVideo, Mail, ShieldCheck, Sparkles, LogOut } from "lucide-react";
+import { Loader2, LogOut, Mail, ShieldCheck, Sparkles } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -35,6 +34,7 @@ import NetworkPage from "./pages/NetworkPage";
 import ExchangeRatePage from "./pages/ExchangeRatePage";
 import CompanyPage from "./pages/CompanyPage";
 import SettingsPage from "./pages/SettingsPage";
+import SidebarSettings from "./pages/SidebarSettings";
 import ContentIdCreatorPage from "./pages/ContentIdCreatorPage";
 import ContentIdDeliveryPage from "./pages/ContentIdDeliveryPage";
 import ContentIdVideoDeliveryPage from "./pages/ContentIdVideoDeliveryPage";
@@ -43,16 +43,22 @@ import ContentIdSettingsPage from "./pages/ContentIdSettingsPage";
 import ContentIdCatalogPage from "./pages/ContentIdCatalogPage";
 import ContentIdWebAssetPage from "./pages/ContentIdWebAssetPage";
 import ContentIdClaimPage from "./pages/ContentIdClaimPage";
+import ContentIdCheckPage from "./pages/ContentIdCheckPage";
+import ContentIdOwnershipEmailPage from "./pages/ContentIdOwnershipEmailPage";
 import ContentIdWhitelistPage from "./pages/ContentIdWhitelistPage";
 import { ExpenseAccountsPage, ExpenseCategoriesPage, ExpenseOverviewPage, ExpenseRevenuePage, ExpenseTransactionsPage } from "./pages/ExpensePages";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { I18nProvider, useI18n } from "./context/I18nContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { SystemSettingsProvider, useSystemSettings } from "./context/SystemSettingsContext";
-import LanguageToggle from "./components/LanguageToggle";
 import LanguageRuntime from "./components/LanguageRuntime";
 import ReadOnlyRuntime from "./components/ReadOnlyRuntime";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { loginPathFor, returnPathFromSearch } from "./utils/returnTo";
+
+const AnalyticsPage = lazy(() => import("./pages/analytics/AnalyticsPage"));
+// /pdf: stand-alone PDF editor (no Sidebar / Topbar, not linked from the navigation).
+const PdfEditorPage = lazy(() => import("./pages/pdfEditor/PdfEditorPage"));
 
 function LockedPage() {
   const { user, logout } = useAuth();
@@ -130,419 +136,9 @@ function LockedPage() {
   );
 }
 
-function MobileNav() {
-  const location = useLocation();
-  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
-  const { t } = useI18n();
-  const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/exchange-rates", "/companies", "/groups"];
-  const contentIdPaths = ["/content-id/creator", "/content-id/delivery", "/content-id/video-delivery", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/whitelists", "/content-id/labels", "/content-id/artists"];
-  const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
-  const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
-  const emailPaths = ["/email/notification"];
-  const settingsPaths = ["/settings/system", "/settings/content-id", "/networks"];
-  const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
-  const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
-  const [contentIdOpen, setContentIdOpen] = useState(contentIdPaths.includes(location.pathname));
-  const [expenseOpen, setExpenseOpen] = useState(expensePaths.includes(location.pathname));
-  const [partnerOpen, setPartnerOpen] = useState(partnerPaths.includes(location.pathname));
-  const [emailOpen, setEmailOpen] = useState(emailPaths.includes(location.pathname));
-
-  const channelMenus = [
-    { name: t("Overview"), path: "/channel-management", icon: Video },
-    { name: t("Collaborators"), path: "/channel-management/collaborators", icon: Users },
-    { name: t("Sharing"), path: "/channel-management/sharing", icon: Percent }
-  ].filter(() => canViewChannelManagement);
-
-  const reportMenus = [
-    {
-      name: t("Partner Dashboard"),
-      path: "/partner-dashboard",
-      icon: BarChart3,
-      show: canViewPartnerDashboard
-    },
-    {
-      name: t("Dashboard"),
-      path: "/report-dashboard",
-      icon: BarChart3,
-      show: canViewReports
-    },
-    {
-      name: t("report"),
-      path: "/reports",
-      icon: FileSpreadsheet,
-      show: canViewReports
-    },
-    {
-      name: t("Export Multi"),
-      path: "/export-multi",
-      icon: FileSpreadsheet,
-      show: canViewReports
-    },
-    {
-      name: t("Channel"),
-      path: "/channels",
-      icon: Video,
-      show: canViewReports
-    },
-    {
-      name: t("exchangeRates"),
-      path: "/exchange-rates",
-      icon: CircleDollarSign,
-      show: canViewReports
-    },
-    {
-      name: t("company"),
-      path: "/companies",
-      icon: BriefcaseBusiness,
-      show: canViewReports
-    },
-    {
-      name: t("group"),
-      path: "/groups",
-      icon: UsersRound,
-      show: canViewReports || canViewPartnerDashboard
-    }
-  ].filter((item) => item.show);
-
-  const contentIdMenus = [
-    { name: t("Creator CSV"), path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
-    { name: t("CMS Delivery"), path: "/content-id/delivery", icon: CloudUpload, show: canViewContentIdFull },
-    { name: t("Video Delivery"), path: "/content-id/video-delivery", icon: Clapperboard, show: canViewContentIdFull },
-    { name: t("Web Asset Reference"), path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
-    { name: t("Product Manager"), path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
-    { name: t("Claim Manager"), path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
-    { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
-    { name: t("Label"), path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
-    { name: t("Artist"), path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
-  ].filter((item) => item.show);
-  const mobileContentIdMenus =
-    canViewContentIdFull && !contentIdMenus.some((item) => item.path === "/content-id/whitelists")
-      ? [
-          ...contentIdMenus.slice(0, 4),
-          { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck },
-          ...contentIdMenus.slice(4)
-        ]
-      : contentIdMenus;
-
-  const menus = [
-    {
-      name: t("account"),
-      path: "/account",
-      icon: UserRound,
-      show: canViewAccount
-    }
-  ].filter((item) => item.show);
-
-  const settingsMenus = [
-    {
-      name: t("systemSettings"),
-      path: "/settings/system",
-      icon: Settings
-    },
-    {
-      name: t("network"),
-      path: "/networks",
-      icon: Network
-    },
-    {
-      name: t("Content ID Setting"),
-      path: "/settings/content-id",
-      icon: Disc3
-    }
-  ].filter((item) => {
-    if (item.path === "/settings/system" || item.path === "/networks") return canViewSettings;
-    return canViewContentIdSettings;
-  });
-
-  return (
-    <div className="hidden">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 font-black text-slate-900">
-          <img src="/ans-logo.png" alt="ANS Network" className="h-8 w-8 object-contain" />
-          {t("appTitle")}
-        </div>
-
-        <LanguageToggle compact />
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        {(canViewChannelManagement || canViewReports || canViewPartnerDashboard || canViewEmail || canViewContentId || canViewExpense || canViewPartner) && (
-          <div className="col-span-2">
-            {canViewChannelManagement && (
-            <>
-            <button
-              type="button"
-              onClick={() => setChannelOpen((open) => !open)}
-              className={[
-                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold mb-2",
-                channelOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-              ].join(" ")}
-            >
-              <Video size={17} />
-              {t("Channel Management")}
-              <ChevronDown size={16} className={channelOpen ? "rotate-180 transition" : "transition"} />
-            </button>
-            {channelOpen && (
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                {channelMenus.map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname === item.path || (location.pathname === "/" && item.path === "/channel-management");
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={[
-                        "flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
-                        active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"
-                      ].join(" ")}
-                    >
-                      <Icon size={16} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-            </>
-            )}
-            {(canViewReports || canViewPartnerDashboard) && (
-            <>
-            <button
-              type="button"
-              onClick={() => setReportOpen((open) => !open)}
-              className={[
-                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
-                reportOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-              ].join(" ")}
-            >
-              <FileSpreadsheet size={17} />
-              {t("report")}
-              <ChevronDown size={16} className={reportOpen ? "rotate-180 transition" : "transition"} />
-            </button>
-            {reportOpen && (
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {reportMenus.map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname === item.path;
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={[
-                        "flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
-                        active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"
-                      ].join(" ")}
-                    >
-                      <Icon size={16} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-            </>
-            )}
-            {canViewContentId && (
-            <>
-            <button
-              type="button"
-              onClick={() => setContentIdOpen((open) => !open)}
-              className={[
-                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold mt-2",
-                contentIdOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-              ].join(" ")}
-            >
-              <Disc3 size={17} />
-              {t("Content ID")}
-              <ChevronDown size={16} className={contentIdOpen ? "rotate-180 transition" : "transition"} />
-            </button>
-            {contentIdOpen && (
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {mobileContentIdMenus.map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname === item.path;
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={[
-                        "flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
-                        active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"
-                      ].join(" ")}
-                    >
-                      <Icon size={16} />
-                      {item.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-            </>
-            )}
-            {canViewExpense && (
-            <>
-            <button
-              type="button"
-              onClick={() => setExpenseOpen((open) => !open)}
-              className={[
-                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold mt-2",
-                expenseOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-              ].join(" ")}
-            >
-              <WalletCards size={17} />
-              {t("expense")}
-              <ChevronDown size={16} className={expenseOpen ? "rotate-180 transition" : "transition"} />
-            </button>
-            {expenseOpen && (
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {[
-                  { name: t("overview"), path: "/expenses/overview", icon: BarChart3 },
-                  { name: t("expenseGroups"), path: "/expenses/categories", icon: ReceiptText },
-                  { name: t("transactions"), path: "/expenses/transactions", icon: FileSpreadsheet },
-                  { name: t("accounts"), path: "/expenses/accounts", icon: Landmark },
-                  { name: t("revenue"), path: "/expenses/revenue", icon: CircleDollarSign }
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname === item.path;
-                  return (
-                    <Link key={item.path} to={item.path} className={["flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold", active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"].join(" ")}>
-                      <Icon size={16} /> {item.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-            </>
-            )}
-          </div>
-        )}
-        {canViewPartner && (
-          <div className="col-span-2">
-            <button
-              type="button"
-              onClick={() => setPartnerOpen((open) => !open)}
-              className={[
-                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold mt-2",
-                partnerOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-              ].join(" ")}
-            >
-              <Building2 size={17} />
-              {t("Partner & Contract")}
-              <ChevronDown size={16} className={partnerOpen ? "rotate-180 transition" : "transition"} />
-            </button>
-            {partnerOpen && (
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {[
-                  { name: t("Overview"), path: "/partners/overview", icon: BarChart3 },
-                  { name: t("Partner"), path: "/partners/list", icon: Building2 },
-                  { name: t("Contract"), path: "/partners/contracts", icon: FileSignature }
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname === item.path || (location.pathname === "/partners" && item.path === "/partners/overview");
-                  return (
-                    <Link key={item.path} to={item.path} className={["flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold", active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"].join(" ")}>
-                      <Icon size={16} /> {item.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-        {canViewEmail && (
-          <div className="col-span-2">
-            <button
-              type="button"
-              onClick={() => setEmailOpen((open) => !open)}
-              className={[
-                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold mt-2",
-                emailOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-              ].join(" ")}
-            >
-              <Mail size={17} />
-              {t("Email")}
-              <ChevronDown size={16} className={emailOpen ? "rotate-180 transition" : "transition"} />
-            </button>
-            {emailOpen && (
-              <div className="grid grid-cols-1 gap-2 mt-2">
-                {[
-                  { name: t("Email Notification"), path: "/email/notification", icon: Mail }
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname === item.path;
-                  return (
-                    <Link key={item.path} to={item.path} className={["flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold", active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"].join(" ")}>
-                      <Icon size={16} /> {item.name}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-        {menus.map((item) => {
-          const Icon = item.icon;
-          const active = location.pathname === item.path;
-
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={[
-                "flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
-                active
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-100 text-slate-600"
-              ].join(" ")}
-            >
-              <Icon size={17} />
-              {item.name}
-            </Link>
-          );
-        })}
-        {canViewPartnerGroups && !canViewReports && !canViewPartnerDashboard && (
-          <Link
-            to="/groups"
-            className={[
-              "col-span-2 flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
-              location.pathname === "/groups" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-            ].join(" ")}
-          >
-            <UsersRound size={17} />
-            {t("group")}
-          </Link>
-        )}
-        {(canViewSettings || canViewContentIdSettings) && (
-          <div className="col-span-2">
-            <div className="grid grid-cols-1 gap-2">
-              {settingsMenus.map((item) => {
-                const Icon = item.icon;
-                const active = location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={[
-                      "flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
-                      active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-                    ].join(" ")}
-                  >
-                    <Icon size={17} />
-                    {item.name}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function PrivateLayout() {
-  const { user, authLoading, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
+  const { canViewAnalytics } = useAuth();
+  const { user, authLoading, canViewReports, canViewEmail, canViewChannelManagement, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
 
   if (authLoading) {
     return (
@@ -565,9 +161,10 @@ function PrivateLayout() {
 
       <main className="app-main flex-1 min-w-0">
         <Topbar />
-        <MobileNav />
 
         <Routes>
+          <Route path="/analytic/*" element={canViewAnalytics ? <Suspense fallback={<div className="p-12 flex justify-center" role="status"><Loader2 className="animate-spin text-indigo-600" size={36} /></div>}><AnalyticsPage /></Suspense> : <Navigate to={defaultPath} replace />} />
+          <Route path="/analytics/*" element={<Navigate to="/analytic/overview" replace />} />
           <Route
             path="/"
             element={
@@ -758,6 +355,14 @@ function PrivateLayout() {
             element={canViewContentIdClaim ? <ContentIdClaimPage /> : <Navigate to={defaultPath} replace />}
           />
           <Route
+            path="/content-id/ownership-email"
+            element={canViewContentIdFull ? <ContentIdOwnershipEmailPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
+            path="/content-id/check"
+            element={canViewContentIdFull ? <ContentIdCheckPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
             path="/content-id/whitelists"
             element={canViewContentIdFull ? <ContentIdWhitelistPage /> : <Navigate to={defaultPath} replace />}
           />
@@ -780,6 +385,7 @@ function PrivateLayout() {
           <Route path="/account" element={canViewAccount ? <AccountPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
           <Route path="/settings/system" element={canViewSettings ? <SettingsPage /> : <Navigate to={defaultPath} replace />} />
+          <Route path="/settings/sidebar" element={canViewSettings ? <SidebarSettings /> : <Navigate to={defaultPath} replace />} />
           <Route path="/settings/content-id" element={canViewContentIdSettings ? <ContentIdSettingsPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/locked" element={<LockedPage />} />
           <Route path="*" element={<Navigate to={defaultPath} replace />} />
@@ -791,6 +397,7 @@ function PrivateLayout() {
 
 function PublicRoute({ children }) {
   const { user, authLoading } = useAuth();
+  const location = useLocation();
 
   if (authLoading) {
     return (
@@ -801,10 +408,39 @@ function PublicRoute({ children }) {
   }
 
   if (user) {
-    return <Navigate to="/home" replace />;
+    return <Navigate to={returnPathFromSearch(location.search) || "/home"} replace />;
   }
 
   return children;
+}
+
+// Stand-alone tools (no Sidebar / Topbar / ReadOnlyRuntime): any signed-in user, whatever the role. A visitor
+// who is not signed in goes to /login?next=<this page>. The page is admitted once the session check has
+// finished with a user; from then on it stays mounted when the session ends (token expiry, 401): the work it
+// holds lives only in memory, and the page reads useAuth().user itself to tell the user.
+function StandaloneRoute({ children }) {
+  const { user, authLoading } = useAuth();
+  const location = useLocation();
+  const [admitted, setAdmitted] = useState(false);
+
+  if (user && !authLoading && !admitted) setAdmitted(true);
+
+  if (!admitted) {
+    if (authLoading || user) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#f3f6fb]">
+          <Loader2 className="animate-spin text-blue-600" size={42} />
+        </div>
+      );
+    }
+    return <Navigate to={loginPathFor(location.pathname, location.search, location.hash)} replace />;
+  }
+
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f3f6fb]" role="status"><Loader2 className="animate-spin text-blue-600" size={42} /></div>}>
+      {children}
+    </Suspense>
+  );
 }
 
 function HomeRoute() {
@@ -824,7 +460,6 @@ function HomeRoute() {
       <Sidebar />
       <main className="app-main flex-1 min-w-0">
         <Topbar />
-        <MobileNav />
         <HomePage />
       </main>
     </div>
@@ -840,6 +475,7 @@ function AppRoutes() {
           <Route path="/partner-request/:token" element={<PartnerRequestPage />} />
           <Route path="/" element={<HomeRoute />} />
           <Route path="/home" element={<HomeRoute />} />
+          <Route path="/pdf/*" element={<StandaloneRoute><PdfEditorPage /></StandaloneRoute>} />
 
       <Route
         path="/login"

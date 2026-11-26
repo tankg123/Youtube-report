@@ -1298,24 +1298,24 @@ test("updateRights reports a match policy update that never got an answer per tr
   again.body.product.tracks.forEach((track) => assert.equal(track.match_policy_id, "policy-4"));
 });
 
-test("a Google 401 is answered as 424 with a re-auth hint and flags the network", async () => {
+test("a repeated Google API 401 returns 424 and the network works again when Google recovers", async () => {
   resetCalls();
   cms.authFail = true;
-  const res = await call(controller.checkDuplicates, { body: { network_id: 7, isrcs: ["VNA122400002"] } });
-  assert.equal(res.statusCode, 424);
-  assert.equal(res.body.message, "CMS authorization failed: Invalid Credentials. Re-authorize this CMS in Settings > Network.");
-  assert.equal(calls.length, 1, "a 401 is never retried");
-  assert.deepEqual(networkRow(), { cms_auth_status: "error", cms_auth_error: "Invalid Credentials" });
-  assert.doesNotMatch(JSON.stringify(res.body), /fresh-token/);
+  try {
+    const res = await call(controller.checkDuplicates, { body: { network_id: 7, isrcs: ["VNA122400002"] } });
+    assert.equal(res.statusCode, 424);
+    assert.equal(res.body.message, "CMS authorization failed: Invalid Credentials.");
+    assert.equal(calls.length, 2, "a rejected access token is refreshed once");
+    assert.deepEqual(networkRow(), { cms_auth_status: "connected", cms_auth_error: null });
+    assert.doesNotMatch(JSON.stringify(res.body), /fresh-token/);
 
-  memoryDb.prepare("UPDATE networks SET cms_auth_status = 'connected', cms_auth_error = NULL WHERE id = 7").run();
-  const sync = await call(controller.syncTrack, { params: { id: String(state.trackIds.two) } });
-  assert.equal(sync.statusCode, 424);
-  assert.match(sync.body.track.error_message, /^CMS authorization failed: /);
-  assert.equal(networkRow().cms_auth_status, "error");
-
-  cms.authFail = false;
-  memoryDb.prepare("UPDATE networks SET cms_auth_status = 'connected', cms_auth_error = NULL WHERE id = 7").run();
+    const sync = await call(controller.syncTrack, { params: { id: String(state.trackIds.two) } });
+    assert.equal(sync.statusCode, 424);
+    assert.match(sync.body.track.error_message, /^CMS authorization failed: /);
+    assert.equal(networkRow().cms_auth_status, "connected");
+  } finally {
+    cms.authFail = false;
+  }
   const recovered = await call(controller.syncTrack, { params: { id: String(state.trackIds.two) } });
   assert.equal(recovered.statusCode, 200, JSON.stringify(recovered.body));
   assert.equal(recovered.body.track.error_message, null);

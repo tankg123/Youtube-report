@@ -2,6 +2,27 @@
 // Keys are the exact English texts used in the source (t("…") / tk("…")) or produced at runtime (tm()).
 // Keep {placeholders} identical to the key. Identity entries ("ISRC": "ISRC") are fine.
 export default {
+  "Group details": "Chi tiết nhóm",
+  "General settings": "Cài đặt chung",
+  "Website and export settings": "Cài đặt trang web và mẫu xuất",
+  "Channel details": "Chi tiết kênh",
+  "Daily schedule": "Lịch đồng bộ hằng ngày",
+  "Batch details": "Chi tiết lô video",
+  "Claim details": "Chi tiết claim",
+  "No visible subpages.": "Không có trang con nào đang bật.",
+  "Open a saved item using its detail link.": "Mở mục đã lưu bằng liên kết đến trang chi tiết.",
+  "Unlock sidebar settings": "Mở khóa cài đặt thanh bên",
+  "Could not unlock sidebar settings.": "Không thể mở khóa cài đặt thanh bên.",
+  "Sidebar visibility": "Hiển thị trên thanh bên",
+  "Reload menu": "Tải lại menu",
+  "Choose which pages appear in the menu for all users. Showing a group restores its individual page choices.": "Chọn các trang xuất hiện trong menu của mọi người dùng. Khi bật lại một nhóm, từng trang sẽ trở về trạng thái đã chọn trước đó.",
+  "Pages in {group}": "Các trang trong nhóm {group}",
+  "Could not update sidebar visibility.": "Không thể cập nhật thanh bên.",
+  "Could not load the sidebar menu.": "Không thể tải menu thanh bên.",
+  "Show {page} in the sidebar?": "Hiển thị {page} trên thanh bên?",
+  "Hide {page} from the sidebar?": "Ẩn {page} khỏi thanh bên?",
+  "Sidebar confirmation code": "Mã xác nhận thanh bên",
+  "Analytic": "Analytic",
   // Navigation — Sidebar, Topbar (mobile sections) and MobileNav share these menu names.
   "Home": "Trang chủ",
   "Main": "Chính",

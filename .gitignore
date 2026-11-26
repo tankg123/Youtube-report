@@ -10,3 +10,6 @@ Thumbs.db
 backend/data/*.sqlite
 backend/data/*.sqlite-*
 backend/data/delivery-media/
+
+# pdf.js runtime assets of the /pdf editor: copied from node_modules by frontend/pdfjs-assets.mjs
+frontend/public/pdfjs/

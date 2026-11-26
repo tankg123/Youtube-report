@@ -7,6 +7,8 @@ const { randomUUID } = require("crypto");
 const db = require("../config/database");
 const service = require("./assetDeliveryService");
 const store = require("./deliveryStore");
+const { getOwnershipContact } = require("./ownershipContactService");
+const { groupOwnership, readAssetWithOwnership } = require("./assetCheckService");
 const { getVideosMetadataFromYoutube } = require("./youtubeService");
 const { parseRoles, SUPER_ADMIN_ROLES: superAdminRoles } = require("../middlewares/authMiddleware");
 
@@ -268,13 +270,13 @@ function describeUser(user) {
 // Accounts (connected CMS networks)
 // ---------------------------------------------------------------------------
 
-function listClaimAccounts() {
+function listClaimAccounts({ includeAuthErrors = false } = {}) {
   return db.prepare(`
     SELECT id, name, network_code, cms_auth_email, cms_auth_scopes, cms_auth_status
     FROM networks
-    WHERE cms_auth_status = 'connected' AND network_code IS NOT NULL AND trim(network_code) != ''
+    WHERE cms_auth_status IN ('connected', ?) AND network_code IS NOT NULL AND trim(network_code) != ''
     ORDER BY name COLLATE NOCASE ASC
-  `).all().map((row) => ({
+  `).all(includeAuthErrors ? "error" : "connected").map((row) => ({
     id: row.id,
     name: row.name,
     network_code: row.network_code,
@@ -333,32 +335,8 @@ function observe(ctx, stats) {
   };
 }
 
-// getAccessToken() reports a refused token refresh (typically Google's 400 invalid_grant) as an
-// Error flagged `cmsAuthFailed` without a Google HTTP status, which the controller would answer
-// with 400 and nobody would show the re-authorize hint for. It is tagged like a Google 401
-// instead: 424 for the controller, the CMS flagged by noteCmsAuthFailure, one message everywhere.
-function tagRefreshFailure(error, account) {
-  if (!error || typeof error !== "object") return error;
-  const message = cleanText(error.googleMessage || error.message);
-  // getConnectedNetwork() words a missing token as "Please re-auth CMS."; a rejected OAuth client
-  // (a server configuration problem) is deliberately not a credentials failure.
-  const refreshFailure = Boolean(error.cmsAuthFailed) || (!error.oauthClientMisconfigured && /please re-auth cms/i.test(message));
-  if (!refreshFailure) return error;
-  const raw = message || "CMS token refresh failed";
-  error.status = 401;
-  error.networkId = account.id;
-  error.reason = cleanText(error.reason) || "invalid_grant";
-  error.googleMessage = raw;
-  error.message = `CMS authorization failed: ${raw.replace(/[.\s]+$/, "")}. Re-authorize this CMS in Settings > Network.`;
-  return error;
-}
-
 async function contextFor(account, stats) {
-  try {
-    return observe(await service.authContext(account.id), stats);
-  } catch (error) {
-    throw tagRefreshFailure(error, account);
-  }
+  return observe(await service.authContext(account.id), stats);
 }
 
 // ---------------------------------------------------------------------------
@@ -876,10 +854,9 @@ async function searchClaims({ user, body }) {
     try {
       contexts.set(account.id, await contextFor(account, stats));
     } catch (error) {
-      store.noteCmsAuthFailure(error, account.id);
       // A refused credential is a credentials problem (the page offers re-authorization); a token
       // service that merely did not answer is a transient read error like any other.
-      const scope = upstreamStatus(error) === 401 ? "credentials" : "search";
+      const scope = store.isCmsCredentialError(error) ? "credentials" : "search";
       errors.push({ network_id: account.id, network_name: account.name, scope, message: store.errorMessage(error) });
     }
   });
@@ -890,11 +867,9 @@ async function searchClaims({ user, body }) {
       raw.set(claimKey(account.id, item.id), { raw: item, account });
     });
   };
-  // A token Google rejects mid-search is a credentials problem whatever call it answered: the
-  // page then offers re-authorization instead of showing a per-batch search error.
+  // Group token errors by CMS, independently of which batch encountered them.
   const record = (account, scope, error, extra = {}) => {
-    store.noteCmsAuthFailure(error, account.id);
-    const kind = upstreamStatus(error) === 401 ? "credentials" : scope;
+    const kind = store.isCmsCredentialError(error) ? "credentials" : scope;
     errors.push({ network_id: account.id, network_name: account.name, scope: kind, message: store.errorMessage(error), ...extra });
   };
 
@@ -1038,8 +1013,115 @@ async function searchClaims({ user, body }) {
 }
 
 // ---------------------------------------------------------------------------
-// Detail
+// Third-party upload claims and detail
 // ---------------------------------------------------------------------------
+
+async function loadUploadAsset(ctx, assetId, recordError) {
+  let asset;
+  try {
+    asset = await readAssetWithOwnership(ctx, assetId);
+  } catch (error) {
+    if (![403, 404].includes(Number(error.status)) || store.isQuotaReason(error.reason) || store.isCmsCredentialError(error)) throw error;
+  }
+  const metadata = asset?.metadataEffective || {};
+  const detail = {
+    asset_title: cleanText(metadata.title),
+    artists: Array.isArray(metadata.artist) ? metadata.artist.map(cleanText).filter(Boolean) : [],
+    ownership_source: "effective",
+    contacts: null
+  };
+  try {
+    const ownerIds = new Set();
+    if (asset?.ownershipEffective != null) {
+      for (const id of groupOwnership(asset.ownershipEffective).keys()) ownerIds.add(id);
+    } else {
+      detail.ownership_source = "submitted";
+      const { data } = await service.partnerRequest(ctx, "GET", "/ownershipHistory", {
+        params: { assetId, fields: "items(origination(owner),ownership)" }
+      });
+      for (const item of data?.items || []) {
+        for (const id of groupOwnership(item.ownership, item.origination?.owner).keys()) ownerIds.add(id);
+      }
+    }
+    detail.contacts = await service.mapWithConcurrency([...ownerIds], READ_CONCURRENCY, async (ownerId) => {
+      try {
+        return await getOwnershipContact(ctx, ownerId);
+      } catch (error) {
+        recordError(error);
+        return { owner_id: ownerId, name: "", email: null, contact_error: store.errorMessage(error) };
+      }
+    });
+  } catch (error) {
+    recordError(error);
+  }
+  return detail;
+}
+
+async function getThirdPartyUploads({ user, videoId, networkIds }) {
+  const id = cleanText(videoId);
+  if (!VIDEO_ID_PATTERN.test(id)) throw badRequest("A valid video ID is required.");
+  const networks = resolveNetworks(networkIds);
+  const allowed = allowedLabelsOf(user);
+  const results = await service.mapWithConcurrency(networks, READ_CONCURRENCY, async (account) => {
+    const errors = [];
+    const recordError = (error) => errors.push({
+      network_id: account.id,
+      network_name: account.name,
+      message: error.isClaimManagerError ? error.message : store.errorMessage(error)
+    });
+    try {
+      const ctx = await contextFor(account);
+      const result = await claimSearchPages(ctx, {
+        videoId: id,
+        includeThirdPartyClaims: true,
+        ...(allowed ? {} : { partnerUploaded: true })
+      });
+      const videoClaims = result.items.filter((item) => item.videoId === id);
+      if (allowed) {
+        const ownAssetIds = [...new Set(videoClaims.filter((item) => item.thirdPartyClaim === false).map((item) => cleanText(item.assetId)).filter(Boolean))];
+        const assets = await loadAssets(ctx, account, ownAssetIds, { fresh: true });
+        if (!ownAssetIds.some((assetId) => assetMatchesLabels(assets.get(assetId), allowed))) {
+          throw forbidden("This video has no claim in your allowed labels for this CMS.");
+        }
+      }
+      if (result.truncated) recordError(new Error("The CMS returned more claims than the lookup can read."));
+      const uploads = new Map();
+      for (const item of videoClaims) {
+        const origin = typeof item.origin === "string" ? item.origin : item.origin?.source;
+        if (item.thirdPartyClaim !== true || (item.isPartnerUploaded !== true && origin !== "cmsUpload") || !item.assetId || !item.id) continue;
+        uploads.set(item.id, item);
+      }
+      const detailsByAsset = new Map();
+      const claims = await service.mapWithConcurrency([...uploads.values()], READ_CONCURRENCY, async (item) => {
+        const assetId = cleanText(item.assetId);
+        if (!detailsByAsset.has(assetId)) {
+          detailsByAsset.set(assetId, loadUploadAsset(ctx, assetId, recordError).catch((error) => {
+            recordError(error);
+            return { asset_title: "", artists: [], ownership_source: null, contacts: null };
+          }));
+        }
+        const studio = new URL(`https://studio.youtube.com/asset/${encodeURIComponent(assetId)}/ownership`);
+        studio.searchParams.set("o", account.network_code);
+        return {
+          claim_id: cleanText(item.id),
+          asset_id: assetId,
+          video_title: cleanText(item.videoTitle),
+          network_id: account.id,
+          network_name: account.name,
+          status: normalizeStatus(item.status),
+          studio_url: studioUrl(item.studioInfo),
+          ownership_url: studio.href,
+          ...await detailsByAsset.get(assetId)
+        };
+      });
+      return { claims, errors };
+    } catch (error) {
+      recordError(error);
+      return { claims: [], errors };
+    }
+  });
+  return { claims: results.flatMap((result) => result.claims), errors: results.flatMap((result) => result.errors) };
+}
 
 async function getClaimDetail({ user, networkId, claimId }) {
   const id = cleanText(claimId);
@@ -1437,7 +1519,7 @@ async function sendWrite(write, { ctx, item, account, before, allowed, finish, o
     return confirmed(after, write.success);
   } catch (error) {
     // A token Google rejects stops the rest of this network's batch: the same token would fail.
-    if (store.noteCmsAuthFailure(error, item.network_id) && typeof onAuthFailure === "function") onAuthFailure(store.errorMessage(error));
+    if (store.isCmsCredentialError(error) && typeof onAuthFailure === "function") onAuthFailure(store.errorMessage(error));
     const { outcome, retryable } = outcomeOfError(error);
     const reason = cleanText(error?.reason) || null;
     const retryAfter = retryAfterOf(error);
@@ -1545,7 +1627,7 @@ async function writeBatch(write, { user, items, noteText, signal, held }) {
     try {
       contexts.set(networkId, await contextFor(account, stats));
     } catch (error) {
-      if (!store.noteCmsAuthFailure(error, networkId) && isTransientFailure(error)) {
+      if (!store.isCmsCredentialError(error) && isTransientFailure(error)) {
         unavailable.set(networkId, { reason: "cms_unavailable", message: `Not sent: ${store.errorMessage(error)}`, retry_after: retryAfterOf(error) });
         return;
       }
@@ -1583,7 +1665,7 @@ async function writeBatch(write, { user, items, noteText, signal, held }) {
       // retryable instead.
       const message = store.errorMessage(error);
       console.error(`[claim-manager] ${verb} pre-read failed for network ${networkId}: ${message}`);
-      if (store.noteCmsAuthFailure(error, networkId)) {
+      if (store.isCmsCredentialError(error)) {
         blocked.set(networkId, message);
         return;
       }
@@ -1824,7 +1906,6 @@ async function recheckClaims({ user, items }) {
         if (!entry.found && !entry.message) entry.message = "Claim was not found in this CMS.";
       });
     } catch (error) {
-      store.noteCmsAuthFailure(error, networkId);
       fail(store.errorMessage(error));
     }
   });
@@ -2049,6 +2130,7 @@ function exportHistoryCsv({ user, filters = {} }) {
 }
 
 module.exports = {
+  claimSearchPages,
   LIMITS,
   CLAIM_STATUSES,
   CONTENT_TYPES,
@@ -2062,6 +2144,7 @@ module.exports = {
   exportHistoryCsv,
   extractVideoId,
   getClaimDetail,
+  getThirdPartyUploads,
   isLimitedUser,
   listClaimAccounts,
   listHistory,

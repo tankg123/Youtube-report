@@ -2,9 +2,10 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useI18n } from "../context/I18nContext";
 
-// The Content ID, Report and settings pages are translated through the i18n layer (t() keys), so the
-// DOM walker below must skip them: it would rewrite data there (e.g. "channels" / "kênh" inside titles).
-const WALKER_EXCLUDED_PREFIXES = ["/content-id"];
+// The Content ID, Analytics, Report and settings pages are translated through the i18n layer (t() keys), so
+// the DOM walker below must skip them: it would rewrite data there (e.g. "channels" / "kênh" inside titles).
+// /pdf: the PDF editor renders document text (pdf.js text layer, text boxes) that must never be rewritten.
+const WALKER_EXCLUDED_PREFIXES = ["/content-id", "/analytic", "/pdf"];
 const WALKER_EXCLUDED_PATHS = new Set([
   "/report-dashboard",
   "/partner-dashboard",

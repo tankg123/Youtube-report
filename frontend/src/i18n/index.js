@@ -6,6 +6,14 @@ import { translations } from "./legacy.js";
 import rules from "./vi/rules.js";
 import englishRules from "./en/rules.js";
 import serverVietnamese from "./en/serverVietnamese.js";
+import analyticsChannels from "./vi/analyticsChannels.js";
+import analyticsExplorer from "./vi/analyticsExplorer.js";
+import analyticsKit from "./vi/analyticsKit.js";
+import analyticsOverview from "./vi/analyticsOverview.js";
+import analyticsReports from "./vi/analyticsReports.js";
+import analyticsServer from "./vi/analyticsServer.js";
+import analyticsShared from "./vi/analyticsShared.js";
+import analyticsSync from "./vi/analyticsSync.js";
 import assetDeliveryDetail from "./vi/assetDeliveryDetail.js";
 import assetDeliveryForm from "./vi/assetDeliveryForm.js";
 import assetDeliveryList from "./vi/assetDeliveryList.js";
@@ -16,6 +24,11 @@ import claimManagerPanels from "./vi/claimManagerPanels.js";
 import common from "./vi/common.js";
 import contentIdAssets from "./vi/contentIdAssets.js";
 import contentIdCreator from "./vi/contentIdCreator.js";
+import pdfEditorMessages from "./vi/pdfEditorMessages.js";
+import pdfEditorPages from "./vi/pdfEditorPages.js";
+import pdfEditorShell from "./vi/pdfEditorShell.js";
+import pdfEditorSign from "./vi/pdfEditorSign.js";
+import pdfEditorTools from "./vi/pdfEditorTools.js";
 import reportChannels from "./vi/reportChannels.js";
 import reportDashboard from "./vi/reportDashboard.js";
 import reportGroups from "./vi/reportGroups.js";
@@ -41,6 +54,19 @@ export const NAMESPACES = Object.freeze([
   { name: "reportDashboard", entries: reportDashboard },
   { name: "reportManager", entries: reportManager },
   { name: "reportChannels", entries: reportChannels },
+  { name: "analyticsShared", entries: analyticsShared },
+  { name: "analyticsKit", entries: analyticsKit },
+  { name: "analyticsOverview", entries: analyticsOverview },
+  { name: "analyticsChannels", entries: analyticsChannels },
+  { name: "analyticsReports", entries: analyticsReports },
+  { name: "analyticsSync", entries: analyticsSync },
+  { name: "analyticsExplorer", entries: analyticsExplorer },
+  { name: "pdfEditorShell", entries: pdfEditorShell },
+  { name: "pdfEditorTools", entries: pdfEditorTools },
+  { name: "pdfEditorPages", entries: pdfEditorPages },
+  { name: "pdfEditorSign", entries: pdfEditorSign },
+  { name: "pdfEditorMessages", entries: pdfEditorMessages },
+  { name: "analyticsServer", entries: analyticsServer, runtimeOnly: true },
   { name: "server", entries: server, runtimeOnly: true }
 ]);
 

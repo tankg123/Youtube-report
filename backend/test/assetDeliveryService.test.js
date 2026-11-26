@@ -3,31 +3,22 @@ process.env.CONTENT_ID_RETRY_BASE_MS = "1";
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const Module = require("node:module");
+const fs = require("node:fs");
+const path = require("node:path");
 const { Readable } = require("node:stream");
+const Database = require("better-sqlite3");
 
 const calls = [];
+const refreshCalls = [];
 let handler = async () => ({ status: 200, headers: {}, data: {} });
 
-const networkRow = {
-  id: 7,
-  name: "Primary CMS",
-  network_code: "OWNER_123",
-  cms_auth_status: "connected",
-  cms_auth_email: "cms@example.com",
-  cms_auth_scopes: "https://www.googleapis.com/auth/youtubepartner",
-  cms_access_token: "fresh-token",
-  cms_refresh_token: "refresh-token",
-  cms_token_expiry: new Date(Date.now() + 3600000).toISOString()
-};
-
-const fakeDb = {
-  prepare(sql) {
-    if (sql.includes("FROM networks")) {
-      return { all: () => [networkRow], get: () => networkRow, run: () => ({ changes: 1 }) };
-    }
-    return { all: () => [], get: () => null, run: () => ({ changes: 0 }) };
-  }
-};
+const databaseSource = fs.readFileSync(path.join(__dirname, "../src/config/database.js"), "utf8");
+const memoryDb = new Database(":memory:");
+memoryDb.exec(databaseSource.match(/CREATE TABLE IF NOT EXISTS networks \([\s\S]*?\n\s*\);/)[0]);
+memoryDb.prepare(`
+  INSERT INTO networks (id, name, network_code, cms_auth_email, cms_auth_scopes)
+  VALUES (7, 'Primary CMS', 'OWNER_123', 'cms@example.com', 'https://www.googleapis.com/auth/youtubepartner')
+`).run();
 
 const fakeAxios = {
   async request(config) {
@@ -39,9 +30,12 @@ const fakeAxios = {
 const originalLoad = Module._load;
 Module._load = function loadWithAssetDeliveryFakes(request, parent, isMain) {
   if (request === "axios") return fakeAxios;
-  if (request === "../config/database") return fakeDb;
+  if (request === "../config/database") return memoryDb;
   if (request === "./googleCmsAuthService") {
-    return { refreshAccessToken: async () => ({ access_token: "refreshed", expires_in: 3600 }) };
+    return { refreshAccessToken: async (refreshToken) => {
+      refreshCalls.push(refreshToken);
+      return { access_token: "refreshed", expires_in: 3600 };
+    } };
   }
   return originalLoad(request, parent, isMain);
 };
@@ -67,6 +61,12 @@ function ok(data, extra = {}) {
 
 function reset(nextHandler) {
   calls.length = 0;
+  refreshCalls.length = 0;
+  memoryDb.prepare(`
+    UPDATE networks SET cms_auth_status = 'connected', cms_access_token = 'fresh-token',
+      cms_refresh_token = 'refresh-token', cms_token_expiry = ?, cms_auth_error = NULL
+    WHERE id = 7
+  `).run(new Date(Date.now() + 3600000).toISOString());
   handler = nextHandler;
 }
 
@@ -266,6 +266,31 @@ test("runSoundRecordingSteps accepts a resolved auth context instead of a networ
   assert.equal(result.asset_id, "asset-ctx");
   assert.deepEqual(result.steps, { insert: true, ownership: true, policy: true, labels: true });
   assert.equal(calls.length, 1);
+});
+
+test("a long-lived delivery context uses the current stored token on later requests", async () => {
+  reset(async () => ok({ items: [] }));
+  const ctx = await service.authContext(7);
+  await service.listPolicies(ctx);
+  memoryDb.prepare("UPDATE networks SET cms_access_token = 'renewed-elsewhere' WHERE id = 7").run();
+  await service.listPolicies({ ...ctx, deliveryStep: "verification" });
+
+  assert.deepEqual(calls.map((call) => call.headers.Authorization), ["Bearer fresh-token", "Bearer renewed-elsewhere"]);
+  assert.deepEqual(refreshCalls, []);
+});
+
+test("an explicit 401 on a JSON create refreshes once and resends the same payload", async () => {
+  reset(async (config) => {
+    if (config.headers.Authorization === "Bearer fresh-token") throw httpError(401, "Invalid Credentials", "authError");
+    return ok({ id: "asset-reauthorized" });
+  });
+  const ctx = await service.authContext(7);
+  const asset = await service.insertSoundRecordingAsset(ctx, { title: "Song", isrc: "VNA122400009" });
+  assert.equal(asset.id, "asset-reauthorized");
+  assert.deepEqual(calls.map((call) => call.method), ["POST", "POST"]);
+  assert.deepEqual(calls.map((call) => call.headers.Authorization), ["Bearer fresh-token", "Bearer refreshed"]);
+  assert.deepEqual(calls[1].data, calls[0].data);
+  assert.deepEqual(refreshCalls, ["refresh-token"]);
 });
 
 test("runSoundRecordingSteps stops at the failing ownership step and reports it", async () => {
@@ -709,6 +734,25 @@ test("uploadReferenceStream initiates a resumable session and PUTs the stream to
   assert.equal(upload.validateStatus(500), false);
 });
 
+test("uploadReferenceStream checks for expiration before the PUT and never replays the stream on 401", async () => {
+  const stream = Readable.from([Buffer.from("x")]);
+  reset(async (config) => {
+    if (config.method === "POST") {
+      memoryDb.prepare("UPDATE networks SET cms_token_expiry = ? WHERE id = 7").run(new Date(0).toISOString());
+      return { status: 200, headers: { location: `${PARTNER_UPLOAD_API}/references?upload_id=abc` }, data: "" };
+    }
+    assert.equal(config.headers.Authorization, "Bearer refreshed");
+    assert.equal(config.data, stream);
+    const chunks = await Array.fromAsync(config.data);
+    assert.deepEqual(chunks, [Buffer.from("x")]);
+    throw httpError(401, "Invalid Credentials", "authError");
+  });
+
+  await assert.rejects(service.uploadReferenceStream(7, "asset-1", { stream, contentLength: 1 }), { status: 401, reason: "authError" });
+  assert.deepEqual(calls.map((call) => call.method), ["POST", "PUT"]);
+  assert.deepEqual(refreshCalls, ["refresh-token"]);
+});
+
 test("uploadReferenceStream treats a 308 as an interrupted upload and validates the size first", async () => {
   reset(async (config) => {
     if (config.method === "POST") return { status: 200, headers: { location: "https://upload.example/session" }, data: "" };
@@ -935,7 +979,7 @@ test("getDeliveryOptions collects policies, labels and owner info without upload
   assert.equal(calls.filter((call) => call.url === `${PARTNER_API}/assetLabels`).length, 2);
 });
 
-test("service errors never expose the access token", async () => {
+test("a second 401 stays local to the request and never exposes the access token", async () => {
   reset(async () => {
     const error = httpError(401, "Invalid Credentials", "authError");
     error.config = { headers: { Authorization: "Bearer fresh-token" } };
@@ -945,9 +989,12 @@ test("service errors never expose the access token", async () => {
   await assert.rejects(service.listPolicies(7), (error) => {
     assert.equal(error.status, 401);
     assert.equal(error.reason, "authError");
+    assert.equal(error.attempts, 2);
     assert.equal(error.config, undefined);
     assert.equal(error.response, undefined);
-    assert.doesNotMatch(JSON.stringify(error), /fresh-token/);
+    assert.doesNotMatch(JSON.stringify(error), /fresh-token|refreshed/);
     return true;
   });
+  assert.deepEqual(refreshCalls, ["refresh-token"]);
+  assert.equal(memoryDb.prepare("SELECT cms_auth_status FROM networks WHERE id = 7").pluck().get(), "connected");
 });

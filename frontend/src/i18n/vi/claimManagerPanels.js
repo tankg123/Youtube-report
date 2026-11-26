@@ -2,6 +2,24 @@
 // Keys are the exact English texts used in the source (t("…") / tk("…")) or produced at runtime (tm()).
 // Keep {placeholders} identical to the key. Identity entries ("ISRC": "ISRC") are fine.
 export default {
+  "Third-party uploads": "Claim do bên khác tải lên",
+  "Checking third-party uploads…": "Đang kiểm tra claim do bên khác tải lên…",
+  "No third-party upload claims found.": "Không tìm thấy claim do bên khác tải lên.",
+  "Ownership contact": "Liên hệ về quyền sở hữu",
+  "Lookup CMS: {name}": "CMS dùng để tra cứu: {name}",
+  "Submitted ownership": "Quyền sở hữu do các bên khai báo",
+  "Ownership contacts could not be loaded.": "Không tải được thông tin liên hệ về quyền sở hữu.",
+  "YouTube did not provide an ownership contact.": "YouTube chưa cung cấp thông tin liên hệ về quyền sở hữu.",
+  "YouTube did not provide a contact email.": "YouTube chưa cung cấp email liên hệ.",
+  "Ownership request for asset {id}": "Yêu cầu về quyền sở hữu tài sản {id}",
+  "I am contacting you about ownership of YouTube asset {assetId}, claim {claimId}, on video {videoUrl}.": "Tôi liên hệ về quyền sở hữu tài sản YouTube {assetId}, claim {claimId}, trên video {videoUrl}.",
+  "Compose ownership email": "Soạn email về quyền sở hữu",
+  "Copy email": "Sao chép email",
+  "Ownership and Policy": "Quyền sở hữu và chính sách",
+  "Open claim in Studio": "Mở claim trong YouTube Studio",
+  "A valid video ID is required.": "Cần có ID video hợp lệ.",
+  "This video has no claim in your allowed labels for this CMS.": "Video này không có claim thuộc nhãn bạn được phép xem trong CMS này.",
+  "The CMS returned more claims than the lookup can read.": "Số claim CMS trả về vượt quá giới hạn tra cứu.",
   // ---------------------------------------------------------------------------
   // Shared between the panels (buttons, generic words)
   // ---------------------------------------------------------------------------

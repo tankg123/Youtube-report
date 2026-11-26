@@ -1,0 +1,2229 @@
+/*
+ * PDF editor (/pdf): the frame of the editor (ui/Shell.jsx and the components of ui/).
+ * Every selector starts with .pdfx-root: this stylesheet stays in the document after the user leaves /pdf.
+ * The pages themselves are styled by viewer.css; text boxes by text.css.
+ *
+ * Tokens (--pdfx-*) live on .pdfx-root, their dark values under .theme-dark .pdfx-root. The accent is the
+ * application's own (--ui-primary, --ui-accent-rgb: set from the user's palette). Paper never follows the
+ * theme: whatever sits ON a page (.pdfx-page-error) uses fixed light colours.
+ *
+ * Layout follows data-layout on the root, set by the shell from the width of the window (not media queries,
+ * so that script and style always agree):
+ *   wide    1200 px and more   rail, panel, pages, properties as columns
+ *   medium  900 to 1199 px     the panel and the properties lie over the pages; the search field is folded
+ *   narrow  below 900 px       one column; the tool bar is a strip at the bottom; panels are sheets
+ *
+ * Tooltips are CSS only: [data-tip] shows its text 500 ms after the pointer rests on it and at once on
+ * keyboard focus. data-tip-side = "bottom" (default) | "top" | "right"; data-tip-align = "center" | "start" | "end".
+ */
+
+.pdfx-root {
+  --pdfx-bg: #eef2f6;
+  --pdfx-surface: #ffffff;
+  --pdfx-surface-2: #f4f6f9;
+  --pdfx-surface-3: #e8ecf1;
+  --pdfx-border: #dfe4ea;
+  --pdfx-border-strong: #c3cbd6;
+  --pdfx-text: #0f172a;
+  --pdfx-text-2: #475569;
+  --pdfx-text-3: #8793a5;
+  --pdfx-accent: var(--ui-primary, #2563eb);
+  --pdfx-accent-hover: var(--ui-primary-hover, #1d4ed8);
+  --pdfx-accent-rgb: var(--ui-accent-rgb, 37, 99, 235);
+  --pdfx-accent-ink: var(--pdfx-accent);
+  --pdfx-accent-soft: rgba(var(--pdfx-accent-rgb), 0.12);
+  --pdfx-accent-soft-2: rgba(var(--pdfx-accent-rgb), 0.2);
+  --pdfx-on-accent: #ffffff;
+  --pdfx-danger: #dc2626;
+  --pdfx-danger-soft: #fee2e2;
+  --pdfx-warning: #b45309;
+  --pdfx-warning-soft: #fef3c7;
+  --pdfx-success: #15803d;
+  --pdfx-success-soft: #dcfce7;
+  --pdfx-info: #1d4ed8;
+  --pdfx-info-soft: #dbeafe;
+  --pdfx-scrim: rgb(15 23 42 / 0.28);
+  --pdfx-scrim-strong: rgb(15 23 42 / 0.5);
+  --pdfx-danger-strong: #dc2626;
+  --pdfx-danger-strong-hover: #b91c1c;
+  --pdfx-shadow: 0 10px 28px rgb(15 23 42 / 0.16), 0 2px 6px rgb(15 23 42 / 0.08);
+  --pdfx-tip-bg: #0f172a;
+  --pdfx-tip-text: #f8fafc;
+  --pdfx-bar-height: 48px;
+  --pdfx-tool-height: 44px;
+  --pdfx-status-height: 34px;
+  --pdfx-control: 36px;
+  --pdfx-radius: 8px;
+
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--pdfx-bg);
+  color: var(--pdfx-text);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.theme-dark .pdfx-root {
+  --pdfx-bg: #0b1220;
+  --pdfx-surface: #121b2e;
+  --pdfx-surface-2: #18233a;
+  --pdfx-surface-3: #223049;
+  --pdfx-border: #283650;
+  --pdfx-border-strong: #3d4d6b;
+  --pdfx-text: #f1f5f9;
+  --pdfx-text-2: #c5cfdd;
+  --pdfx-text-3: #7f8da6;
+  --pdfx-accent-ink: color-mix(in srgb, var(--pdfx-accent) 55%, #ffffff);
+  --pdfx-accent-soft: rgba(var(--pdfx-accent-rgb), 0.24);
+  --pdfx-accent-soft-2: rgba(var(--pdfx-accent-rgb), 0.36);
+  --pdfx-danger: #f87171;
+  --pdfx-danger-soft: rgb(127 29 29 / 0.5);
+  --pdfx-warning: #fbbf24;
+  --pdfx-warning-soft: rgb(120 53 15 / 0.5);
+  --pdfx-success: #4ade80;
+  --pdfx-success-soft: rgb(20 83 45 / 0.5);
+  --pdfx-info: #93c5fd;
+  --pdfx-info-soft: rgb(30 58 138 / 0.5);
+  --pdfx-scrim: rgb(2 6 23 / 0.5);
+  --pdfx-scrim-strong: rgb(2 6 23 / 0.68);
+  --pdfx-danger-strong: #dc2626;
+  --pdfx-danger-strong-hover: #ef4444;
+  --pdfx-shadow: 0 12px 30px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  --pdfx-tip-bg: #e2e8f0;
+  --pdfx-tip-text: #0f172a;
+}
+
+.pdfx-root:fullscreen {
+  background: var(--pdfx-bg);
+}
+
+.pdfx-root .pdfx-chrome {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdfx-root h1,
+.pdfx-root h2,
+.pdfx-root h3,
+.pdfx-root p {
+  margin: 0;
+}
+
+.pdfx-root .pdfx-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- controls ------------------------------------------------------------------------------------------------ */
+
+.pdfx-root .pdfx-btn {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-width: var(--pdfx-control);
+  height: var(--pdfx-control);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--pdfx-radius);
+  background: transparent;
+  color: var(--pdfx-text-2);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms, border-color 120ms;
+}
+
+.pdfx-root .pdfx-btn:hover {
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-btn:focus-visible,
+.pdfx-root .pdfx-btn[data-keyboard-focus="true"],
+.pdfx-root .pdfx-input:focus-visible,
+.pdfx-root .pdfx-menu-item:focus-visible,
+.pdfx-root .pdfx-chip:focus-visible,
+.pdfx-root .pdfx-toast button:focus-visible,
+.pdfx-root .pdfx-notice-close:focus-visible,
+.pdfx-root .pdfx-status-marks:focus-visible,
+.pdfx-root .pdfx-language-option:focus-visible,
+.pdfx-root .pdfx-page-error-retry:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: 2px;
+}
+
+.pdfx-root .pdfx-btn[aria-pressed="true"],
+.pdfx-root .pdfx-btn[aria-selected="true"] {
+  background: var(--pdfx-accent-soft);
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-btn[aria-pressed="true"]:hover,
+.pdfx-root .pdfx-btn[aria-selected="true"]:hover {
+  background: var(--pdfx-accent-soft-2);
+}
+
+.pdfx-root .pdfx-btn:disabled,
+.pdfx-root .pdfx-btn[aria-disabled="true"] {
+  background: transparent;
+  color: var(--pdfx-text-3);
+  cursor: not-allowed;
+}
+
+.pdfx-root .pdfx-btn-text {
+  padding: 0 12px;
+}
+
+.pdfx-root .pdfx-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdfx-root .pdfx-btn-outline {
+  border-color: var(--pdfx-border-strong);
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-btn-primary {
+  background: var(--pdfx-accent);
+  color: var(--pdfx-on-accent);
+}
+
+.pdfx-root .pdfx-btn-primary:hover {
+  background: var(--pdfx-accent-hover);
+  color: var(--pdfx-on-accent);
+}
+
+.pdfx-root .pdfx-btn-primary:disabled {
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text-3);
+}
+
+/* a locked one-shot tool: a dot in the corner */
+.pdfx-root .pdfx-btn[data-locked="true"]::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-bar-separator {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-input {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 6px;
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text);
+  font: inherit;
+}
+
+.pdfx-root .pdfx-input:disabled {
+  color: var(--pdfx-text-3);
+  cursor: not-allowed;
+}
+
+.pdfx-root .pdfx-chip {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text-2);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-chip-info {
+  background: var(--pdfx-info-soft);
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-chip-success {
+  background: var(--pdfx-success-soft);
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-chip-warning {
+  background: var(--pdfx-warning-soft);
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-chip-danger {
+  background: var(--pdfx-danger-soft);
+  color: var(--pdfx-danger);
+}
+
+/* ---- tooltips ------------------------------------------------------------------------------------------------ */
+
+/* :where() keeps the specificity low: an element that is positioned by a class of its own stays as it is */
+.pdfx-root :where([data-tip]) {
+  position: relative;
+}
+
+.pdfx-root [data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 60;
+  width: max-content;
+  max-width: 280px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--pdfx-tip-bg);
+  color: var(--pdfx-tip-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: pre-wrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%);
+  transition: opacity 100ms, visibility 0s 100ms;
+}
+
+.pdfx-root [data-tip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 100ms 500ms, visibility 0s 500ms;
+}
+
+.pdfx-root [data-tip]:focus-visible::after,
+.pdfx-root [data-tip][data-keyboard-focus="true"]::after {
+  opacity: 1;
+  visibility: visible;
+  transition: none;
+}
+
+.pdfx-root [data-tip][aria-expanded="true"]::after {
+  display: none;
+}
+
+.pdfx-root [data-tip][data-tip-side="top"]::after {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.pdfx-root [data-tip][data-tip-side="right"]::after {
+  top: 50%;
+  left: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+
+.pdfx-root [data-tip][data-tip-align="start"]::after {
+  left: 0;
+  transform: none;
+}
+
+.pdfx-root [data-tip][data-tip-align="end"]::after {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+/* ---- app bar ------------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-appbar {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: var(--pdfx-bar-height);
+  padding: 0 12px 0 6px;
+  border-bottom: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-appbar-title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-filename {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pdfx-root .pdfx-filename-sizer {
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pdfx-root .pdfx-filename-sizer::after {
+  content: attr(data-value);
+  grid-area: 1 / 1;
+  height: 0;
+  padding: 0 7px;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: pre;
+  visibility: hidden;
+}
+
+.pdfx-root .pdfx-filename-input {
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 4ch;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pdfx-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.pdfx-root .pdfx-filename-input:hover {
+  border-color: var(--pdfx-border-strong);
+}
+
+.pdfx-root .pdfx-filename-input:focus-visible {
+  border-color: var(--pdfx-accent-ink);
+  background: var(--pdfx-surface);
+  outline: 2px solid var(--pdfx-accent-soft-2);
+}
+
+.pdfx-root .pdfx-filename-extension {
+  color: var(--pdfx-text-3);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-chips {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-appbar-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-language {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: var(--pdfx-radius);
+  background: var(--pdfx-surface-2);
+}
+
+.pdfx-root .pdfx-language-option {
+  min-width: 30px;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pdfx-text-2);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-language-option[aria-pressed="true"] {
+  background: var(--pdfx-surface);
+  color: var(--pdfx-accent-ink);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.18);
+}
+
+/* ---- tool bar ------------------------------------------------------------------------------------------------ */
+
+.pdfx-root .pdfx-toolrow {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--pdfx-tool-height);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-toolbar {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-tool-scroll,
+.pdfx-root .pdfx-tool-group,
+.pdfx-root .pdfx-tool-group-wrap {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.pdfx-root .pdfx-tool-group {
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-split {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pdfx-root .pdfx-split-arrow {
+  min-width: 18px;
+  width: 18px;
+  margin-left: -2px;
+}
+
+/* Download with its small menu: one primary button in two parts */
+.pdfx-root .pdfx-download {
+  flex: none;
+  gap: 1px;
+}
+
+.pdfx-root .pdfx-download > .pdfx-btn-primary:not(:last-child) {
+  border-radius: var(--pdfx-radius) 0 0 var(--pdfx-radius);
+}
+
+.pdfx-root .pdfx-download-more {
+  width: 26px;
+  min-width: 26px;
+  border-radius: 0 var(--pdfx-radius) var(--pdfx-radius) 0;
+}
+
+/* ---- menus --------------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.pdfx-root .pdfx-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 200px;
+  max-height: min(70vh, 480px);
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 10px;
+  background: var(--pdfx-surface);
+  box-shadow: var(--pdfx-shadow);
+}
+
+.pdfx-root .pdfx-menu-end {
+  right: 0;
+  left: auto;
+}
+
+.pdfx-root .pdfx-menu-top {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.pdfx-root .pdfx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 10px 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pdfx-text);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-menu-item:hover,
+.pdfx-root .pdfx-menu-item:focus-visible {
+  background: var(--pdfx-surface-3);
+}
+
+.pdfx-root .pdfx-menu-item[aria-checked="true"] {
+  color: var(--pdfx-accent-ink);
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-menu-item[aria-disabled="true"] {
+  color: var(--pdfx-text-3);
+  cursor: not-allowed;
+}
+
+.pdfx-root .pdfx-menu-mark {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 18px;
+}
+
+.pdfx-root .pdfx-menu-label {
+  flex: 1 1 auto;
+}
+
+.pdfx-root .pdfx-menu-shortcut {
+  margin-left: 16px;
+  color: var(--pdfx-text-3);
+  font: inherit;
+  font-size: 11px;
+}
+
+.pdfx-root .pdfx-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-menu-heading {
+  padding: 6px 10px 2px;
+  color: var(--pdfx-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* ---- search -------------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-search-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 210px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: var(--pdfx-radius);
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-search-field:focus-within {
+  border-color: var(--pdfx-accent-ink);
+  outline: 2px solid var(--pdfx-accent-soft-2);
+}
+
+.pdfx-root .pdfx-search[data-empty="true"] .pdfx-search-field {
+  border-color: var(--pdfx-danger);
+  outline: 2px solid var(--pdfx-danger-soft);
+}
+
+.pdfx-root .pdfx-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pdfx-text);
+  font: inherit;
+}
+
+.pdfx-root .pdfx-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.pdfx-root .pdfx-search-count {
+  min-width: 58px;
+  padding: 0 4px;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-search[data-empty="true"] .pdfx-search-count {
+  color: var(--pdfx-danger);
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-search-options {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-glyph {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pdfx-root .pdfx-search[data-floating="true"] {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  z-index: 8;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 16px);
+  padding: 4px 6px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 10px;
+  background: var(--pdfx-surface);
+  box-shadow: var(--pdfx-shadow);
+}
+
+/* ---- banners and notices ---------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-notices {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  max-height: 30vh;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--pdfx-info-soft);
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-notice + .pdfx-notice {
+  border-top: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-notice > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-notice p {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-notice[data-tone="warning"] {
+  background: var(--pdfx-warning-soft);
+}
+
+.pdfx-root .pdfx-notice[data-tone="warning"] > svg {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-notice[data-tone="error"] {
+  background: var(--pdfx-danger-soft);
+}
+
+.pdfx-root .pdfx-notice[data-tone="error"] > svg {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-notice-close,
+.pdfx-root .pdfx-toast-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.pdfx-root .pdfx-notice-close:hover,
+.pdfx-root .pdfx-toast-close:hover {
+  opacity: 1;
+}
+
+/* ---- body: rail, panel, stage, side ------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdfx-root .pdfx-rail {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  width: 44px;
+  padding: 6px 0;
+  border-right: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-rail-tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdfx-root .pdfx-panel,
+.pdfx-root .pdfx-side {
+  z-index: 3;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-panel {
+  width: 240px;
+  border-right: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-side {
+  width: 288px;
+  border-left: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-panel-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 4px 0 12px;
+  border-bottom: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-panel-head h2 {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pdfx-root .pdfx-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdfx-root .pdfx-stage-pages {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.pdfx-root .pdfx-stage-pages[inert] {
+  visibility: hidden;
+}
+
+.pdfx-root .pdfx-page-area {
+  flex: 1 1 auto;
+}
+
+.pdfx-root .pdfx-page-area[data-pdfx-pointer="none"] {
+  cursor: grab;
+}
+
+.pdfx-root .pdfx-page-area[data-panning="true"] {
+  cursor: grabbing;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pdfx-root[data-busy="true"] .pdfx-page-area {
+  cursor: progress;
+}
+
+.pdfx-root .pdfx-viewer-floats {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 0;
+  height: 0;
+}
+
+.pdfx-root .pdfx-view {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  background: var(--pdfx-bg);
+}
+
+.pdfx-root .pdfx-context-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 45;
+  width: 0;
+  height: 0;
+}
+
+/* ---- empty state, a file that could not be opened, the crash screen ------------------------------------------- */
+
+.pdfx-root .pdfx-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+}
+
+.pdfx-root .pdfx-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(480px, 100%);
+  padding: 32px 28px;
+  border: 2px dashed var(--pdfx-border-strong);
+  border-radius: 12px;
+  background: var(--pdfx-surface);
+  text-align: center;
+}
+
+.pdfx-root .pdfx-empty-icon {
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-empty-icon-error {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-empty-lead {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-empty-file {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--pdfx-text-2);
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-empty-note {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.pdfx-root.pdfx-crash {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.pdfx-root.pdfx-crash .pdfx-empty-card {
+  border-style: solid;
+}
+
+/* on the paper: fixed light colours */
+.pdfx-root .pdfx-page-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 80%;
+  padding: 16px 20px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff7f7;
+  color: #7f1d1d;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.pdfx-root .pdfx-page-error-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #b91c1c;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #991b1b;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-placeholder,
+.pdfx-root .pdfx-slot-failure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--pdfx-text-2);
+  text-align: center;
+}
+
+.pdfx-root .pdfx-slot-failure > svg {
+  color: var(--pdfx-warning);
+}
+
+/* ---- dropping files ------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: var(--pdfx-scrim);
+}
+
+.pdfx-root .pdfx-drop-zone {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  border: 2px dashed var(--pdfx-border-strong);
+  border-radius: 12px;
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text-2);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pdfx-root .pdfx-drop-zone * {
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-drop-zone-main {
+  flex-grow: 2;
+}
+
+.pdfx-root .pdfx-drop-zone[data-over="true"] {
+  border-color: var(--pdfx-accent-ink);
+  background: color-mix(in srgb, var(--pdfx-accent) 10%, var(--pdfx-surface));
+  color: var(--pdfx-accent-ink);
+}
+
+/* ---- document summary ----------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.pdfx-root .pdfx-summary h3 {
+  color: var(--pdfx-text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pdfx-root .pdfx-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.pdfx-root .pdfx-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pdfx-root .pdfx-summary-row dt {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-summary-row dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+
+.pdfx-root .pdfx-summary-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-summary-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-summary-file {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pdfx-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-summary-note {
+  padding-top: 10px;
+  border-top: 1px solid var(--pdfx-border);
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+/* ---- status bar ------------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-statusbar {
+  --pdfx-control: 28px;
+
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: var(--pdfx-status-height);
+  padding: 0 8px;
+  border-top: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-status-group {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-status-spacer {
+  flex: 1 1 auto;
+}
+
+.pdfx-root .pdfx-pagenumber {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdfx-root .pdfx-pagenumber-input {
+  width: 44px;
+  height: 24px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pdfx-root .pdfx-pagenumber-total {
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-zoom-button {
+  flex-direction: row-reverse;
+  gap: 2px;
+  min-width: 62px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdfx-root .pdfx-status-marks {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--pdfx-danger);
+  border-radius: 999px;
+  background: var(--pdfx-danger-soft);
+  color: var(--pdfx-danger);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-status-size {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- toasts ----------------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-toasts {
+  position: absolute;
+  bottom: calc(var(--pdfx-status-height) + 12px);
+  left: 50%;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(560px, calc(100% - 24px));
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.pdfx-root .pdfx-toast-region {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.pdfx-root .pdfx-toast-region:empty {
+  display: none;
+}
+
+.pdfx-root .pdfx-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 8px 8px 12px;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #f8fafc;
+  box-shadow: var(--pdfx-shadow);
+  pointer-events: auto;
+}
+
+.pdfx-root .pdfx-toast > svg {
+  flex: none;
+  color: #93c5fd;
+}
+
+.pdfx-root .pdfx-toast[data-tone="success"] > svg {
+  color: #4ade80;
+}
+
+.pdfx-root .pdfx-toast[data-tone="warning"] > svg {
+  color: #fbbf24;
+}
+
+.pdfx-root .pdfx-toast[data-tone="error"] {
+  background: #7f1d1d;
+}
+
+.pdfx-root .pdfx-toast[data-tone="error"] > svg {
+  color: #fecaca;
+}
+
+.pdfx-root .pdfx-toast-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-toast-action {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgb(248 250 252 / 0.5);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-toast-action:hover {
+  background: rgb(248 250 252 / 0.14);
+}
+
+/* ---- the running job -------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-job-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 48;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--pdfx-scrim);
+  /* short work (a small file opens in a blink) never flashes a card */
+  animation: pdfx-appear 120ms ease-out 250ms both;
+}
+
+.pdfx-root .pdfx-job {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  padding: 16px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 12px;
+  background: var(--pdfx-surface);
+  box-shadow: var(--pdfx-shadow);
+}
+
+.pdfx-root .pdfx-job-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.pdfx-root .pdfx-job-head strong {
+  flex: 1 1 auto;
+}
+
+.pdfx-root .pdfx-job-percent {
+  color: var(--pdfx-text-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-job-detail {
+  overflow: hidden;
+  color: var(--pdfx-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-job-stage {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-job .pdfx-btn {
+  align-self: flex-end;
+}
+
+.pdfx-root .pdfx-progress {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--pdfx-surface-3);
+}
+
+.pdfx-root .pdfx-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pdfx-accent);
+  transition: width 160ms;
+}
+
+.pdfx-root .pdfx-progress[data-indeterminate="true"] > span {
+  width: 35%;
+  animation: pdfx-slide 1.2s ease-in-out infinite;
+}
+
+.pdfx-root .pdfx-spin {
+  color: var(--pdfx-accent-ink);
+  animation: pdfx-spin 0.9s linear infinite;
+}
+
+@keyframes pdfx-appear {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pdfx-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes pdfx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- dialogs ------------------------------------------------------------------------------------------------------
+ * The kernel's dialogs use the editor's own frame (ui/dialogs/DialogFrame.jsx: .pdfx-dialog-backdrop > .pdfx-dialog);
+ * dialogs of the features may use the application's shared Modal: the classes .pdfx-dialog-title / -file / -text /
+ * -note / -actions / -primary, .pdfx-field-row and .pdfx-field-error work inside either. */
+
+/* the slot covers the editor like the dialog in it: later dialogs lie over earlier ones */
+.pdfx-root .pdfx-dialog-slot {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.pdfx-root .pdfx-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow: auto;
+  background: var(--pdfx-scrim-strong);
+  animation: pdfx-appear 100ms ease-out both;
+}
+
+.pdfx-root .pdfx-dialog {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(100%, 460px);
+  max-height: calc(100dvh - 32px);
+  border: 1px solid var(--pdfx-border);
+  border-radius: 12px;
+  outline: none;
+  background: var(--pdfx-surface);
+  color: var(--pdfx-text);
+  box-shadow: var(--pdfx-shadow);
+}
+
+.pdfx-root .pdfx-dialog-md {
+  width: min(100%, 600px);
+}
+
+.pdfx-root .pdfx-dialog-lg {
+  width: min(100%, 900px);
+}
+
+.pdfx-root .pdfx-dialog-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 12px 10px 20px;
+}
+
+.pdfx-root .pdfx-dialog-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.pdfx-root .pdfx-dialog-title {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pdfx-root .pdfx-dialog h2.pdfx-dialog-title {
+  display: flex;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.pdfx-root .pdfx-dialog-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-dialog[data-tone="danger"] .pdfx-dialog-icon {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-dialog[data-tone="warning"] .pdfx-dialog-icon {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-dialog[data-tone="success"] .pdfx-dialog-icon {
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-dialog-file {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-dialog-head .pdfx-dialog-file {
+  margin-top: 2px;
+  color: var(--pdfx-text-2);
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 2px 20px 16px;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.pdfx-root .pdfx-dialog-body > * + *,
+.pdfx-root .pdfx-dialog-body > div > * + * {
+  margin-top: 10px;
+}
+
+.pdfx-root .pdfx-dialog-foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-dialog-button {
+  max-width: 100%;
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-btn-danger {
+  background: var(--pdfx-danger-strong);
+  color: #ffffff;
+}
+
+.pdfx-root .pdfx-btn-danger:hover {
+  background: var(--pdfx-danger-strong-hover);
+  color: #ffffff;
+}
+
+.pdfx-root .pdfx-btn-outline:disabled,
+.pdfx-root .pdfx-btn-danger:disabled {
+  border-color: var(--pdfx-border);
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-dialog-text {
+  color: var(--pdfx-text);
+  font-size: 14px;
+}
+
+.pdfx-root .pdfx-dialog-note {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  color: var(--pdfx-text-2);
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.pdfx-root .pdfx-dialog-primary {
+  background-color: var(--pdfx-accent);
+  color: var(--pdfx-on-accent);
+}
+
+/* the application's dark theme forces its own hover colour on this utility class */
+.pdfx-root .pdfx-dialog-primary:hover {
+  background-color: var(--pdfx-accent-hover) !important;
+}
+
+/* a sentence that must not be overlooked: an icon, a tinted box, plain words */
+.pdfx-root .pdfx-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--pdfx-info-soft);
+  color: var(--pdfx-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pdfx-root .pdfx-callout > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-callout[data-tone="danger"] {
+  background: var(--pdfx-danger-soft);
+}
+
+.pdfx-root .pdfx-callout[data-tone="danger"] > svg {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-callout[data-tone="warning"] {
+  background: var(--pdfx-warning-soft);
+}
+
+.pdfx-root .pdfx-callout[data-tone="warning"] > svg {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-dialog-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-dialog-facts li {
+  padding: 3px 10px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-fieldset {
+  min-width: 0;
+  margin: 14px 0 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 8px;
+}
+
+.pdfx-root .pdfx-fieldset legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-fieldset-note {
+  margin-top: 8px;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--pdfx-accent);
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-check input:disabled,
+.pdfx-root .pdfx-check input:disabled + span {
+  color: var(--pdfx-text-3);
+  cursor: not-allowed;
+}
+
+.pdfx-root .pdfx-check em {
+  color: var(--pdfx-text-3);
+  font-style: normal;
+}
+
+.pdfx-root .pdfx-dialog-body:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: -2px;
+}
+
+.pdfx-root .pdfx-check input:focus-visible,
+.pdfx-root .pdfx-switch:focus-visible,
+.pdfx-root .pdfx-dialog-close:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: 2px;
+}
+
+.pdfx-root .pdfx-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-name-field {
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-name-field .pdfx-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  font-weight: 500;
+}
+
+.pdfx-root .pdfx-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.pdfx-root .pdfx-field-row .pdfx-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  font-size: 14px;
+}
+
+.pdfx-root .pdfx-field-row .pdfx-input[aria-invalid="true"] {
+  border-color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-field-error {
+  min-height: 20px;
+  margin-top: 6px;
+  color: var(--pdfx-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* the result of a build: one row per page with marks, then the notes */
+.pdfx-root .pdfx-report-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 8px;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-report-rows li {
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(56px, max-content) 1fr;
+  gap: 4px 14px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-report-rows li + li {
+  border-top: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-report-page {
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-report-areas {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-report-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-report-outcome strong {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-report-outcome strong svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pdfx-success);
+}
+
+.pdfx-root .pdfx-report-rows li[data-tone="warning"] strong svg {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-report-detail {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-report-list,
+.pdfx-root .pdfx-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-report-list li,
+.pdfx-root .pdfx-review-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--pdfx-text);
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-report-list svg,
+.pdfx-root .pdfx-review-text svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-review-list li {
+  padding: 10px 12px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 8px;
+}
+
+.pdfx-root .pdfx-review-list .pdfx-check {
+  margin: 6px 0 0 24px;
+  font-weight: 600;
+}
+
+/* document properties */
+.pdfx-root .pdfx-properties-section + .pdfx-properties-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-properties-section h3 {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-properties-list {
+  display: grid;
+  grid-template-columns: minmax(120px, 34%) 1fr;
+  gap: 5px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-properties-row {
+  display: contents;
+}
+
+.pdfx-root .pdfx-properties-list dt {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-properties-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-properties-none {
+  color: var(--pdfx-text-3);
+}
+
+/* keyboard shortcuts */
+.pdfx-root .pdfx-shortcuts-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 24px;
+}
+
+.pdfx-root .pdfx-shortcuts-search {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 8px;
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-shortcuts-search .pdfx-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+}
+
+.pdfx-root .pdfx-switch-row {
+  display: flex;
+  flex: 1 1 320px;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pdfx-root .pdfx-switch-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-switch-row label span {
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  margin-top: 1px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--pdfx-border-strong);
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+
+.pdfx-root .pdfx-switch[aria-checked="true"] {
+  background: var(--pdfx-accent);
+}
+
+.pdfx-root .pdfx-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 120ms;
+}
+
+.pdfx-root .pdfx-switch[aria-checked="true"] .pdfx-switch-knob {
+  transform: translateX(16px);
+}
+
+.pdfx-root .pdfx-shortcuts-grid {
+  margin-top: 16px;
+  columns: 2 340px;
+  column-gap: 28px;
+}
+
+.pdfx-root .pdfx-shortcuts-section {
+  margin: 0 0 16px;
+  break-inside: avoid;
+}
+
+.pdfx-root .pdfx-shortcuts-section h3 {
+  margin-bottom: 4px;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pdfx-root .pdfx-shortcuts-section table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-shortcuts-section th,
+.pdfx-root .pdfx-shortcuts-section td {
+  padding: 5px 0;
+  border-top: 1px solid var(--pdfx-border);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+
+.pdfx-root .pdfx-shortcuts-section tbody th {
+  width: 34%;
+  padding-right: 10px;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-shortcuts-section tr[data-off="true"] th,
+.pdfx-root .pdfx-shortcuts-section tr[data-off="true"] kbd {
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-shortcuts-section td.pdfx-shortcut-keys {
+  width: 38%;
+  padding-right: 10px;
+  line-height: 1.9;
+}
+
+.pdfx-root .pdfx-shortcut-combo {
+  display: inline-flex;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-shortcut-or {
+  margin: 0 5px;
+  color: var(--pdfx-text-3);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-shortcuts-section kbd {
+  display: inline-block;
+  min-width: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--pdfx-surface-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.pdfx-root .pdfx-shortcut-scope {
+  width: 28%;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+/* ---- medium: panels lie over the pages ------------------------------------------------------------------------------ */
+
+.pdfx-root[data-layout="medium"] .pdfx-panel,
+.pdfx-root[data-layout="medium"] .pdfx-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-shadow: var(--pdfx-shadow);
+}
+
+.pdfx-root[data-layout="medium"] .pdfx-panel {
+  left: 44px;
+}
+
+.pdfx-root[data-layout="medium"] .pdfx-side {
+  right: 0;
+}
+
+.pdfx-root[data-layout="medium"] .pdfx-appbar .pdfx-btn-text:not(.pdfx-btn-primary) .pdfx-btn-label {
+  display: none;
+}
+
+.pdfx-root[data-layout="medium"] .pdfx-appbar .pdfx-btn-text:not(.pdfx-btn-primary) {
+  padding: 0;
+}
+
+/* ---- narrow: one column, the tool bar is a strip at the bottom ------------------------------------------------------- */
+
+.pdfx-root[data-layout="narrow"] {
+  --pdfx-control: 44px;
+  --pdfx-tool-height: 56px;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-toolrow {
+  order: 10;
+  border-top: 1px solid var(--pdfx-border);
+  border-bottom: 0;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-tool-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-tool-history {
+  padding-right: 4px;
+  border-right: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-tool-scroll [data-tip]::after,
+.pdfx-root[data-layout="narrow"] .pdfx-rail {
+  display: none;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-search[data-floating="true"] {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  width: auto;
+  border-right: 0;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-side {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 7;
+  width: auto;
+  max-height: 60%;
+  border-top: 1px solid var(--pdfx-border);
+  border-left: 0;
+  border-radius: 12px 12px 0 0;
+  box-shadow: var(--pdfx-shadow);
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-appbar {
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-appbar .pdfx-btn-primary .pdfx-btn-label,
+.pdfx-root[data-layout="narrow"] .pdfx-chips,
+.pdfx-root[data-layout="narrow"] .pdfx-filename-extension {
+  display: none;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-appbar .pdfx-btn-primary {
+  padding: 0;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-statusbar .pdfx-bar-separator {
+  display: none;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-drop {
+  flex-direction: column;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfx-root .pdfx-btn,
+  .pdfx-root .pdfx-progress > span,
+  .pdfx-root [data-tip]::after {
+    transition: none;
+  }
+
+  .pdfx-root .pdfx-spin,
+  .pdfx-root .pdfx-progress[data-indeterminate="true"] > span {
+    animation: none;
+  }
+
+  .pdfx-root .pdfx-job-layer {
+    animation-duration: 1ms;
+  }
+
+  .pdfx-root .pdfx-progress[data-indeterminate="true"] > span {
+    width: 100%;
+    opacity: 0.5;
+  }
+}

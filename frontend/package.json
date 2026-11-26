@@ -4,16 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node pdfjs-assets.mjs --quiet",
     "dev": "vite",
+    "prebuild": "node pdfjs-assets.mjs --quiet",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --test"
   },
   "dependencies": {
+    "@cantoo/fontkit": "2.0.12",
+    "@cantoo/pdf-lib": "2.11.1",
     "@tailwindcss/vite": "^4.3.0",
     "axios": "^1.16.0",
     "lucide-react": "^1.14.0",
+    "node-forge": "1.4.3",
+    "pdfjs-dist": "6.5.438",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.0",

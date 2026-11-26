@@ -166,8 +166,8 @@ function ProductRow({ product, kind, networkName, busy, onOpen, onSync, onDelete
 
   return (
     <tr
-      className={cx("cursor-pointer align-top transition hover:bg-slate-50", rowBusy && "opacity-70")}
-      onClick={() => onOpen(product.id)}
+      className={cx("align-top transition hover:bg-slate-50", onOpen && "cursor-pointer", rowBusy && "opacity-70")}
+      onClick={onOpen && (() => onOpen(product.id))}
     >
       <td className="px-4 py-3">
         <div className="flex items-start gap-3">
@@ -235,9 +235,9 @@ function ProductRow({ product, kind, networkName, busy, onOpen, onSync, onDelete
       </td>
       <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
         <div className="flex flex-wrap justify-end gap-1.5">
-          <Button variant="secondary" size="sm" icon={ExternalLink} disabled={rowBusy} onClick={() => onOpen(product.id)}>
+          {onOpen && <Button variant="secondary" size="sm" icon={ExternalLink} disabled={rowBusy} onClick={() => onOpen(product.id)}>
             {t("Open")}
-          </Button>
+          </Button>}
           {/* Sync is never gated on status: it is the recovery path for a product left in "delivering". */}
           <Button
             variant="secondary"
@@ -491,9 +491,9 @@ export default function ProductList({ kind = "music", network, networks = [], sh
             <Button variant="secondary" size="sm" icon={RefreshCw} loading={loading && products.length > 0} onClick={reload}>
               {t("Refresh")}
             </Button>
-            <Button size="sm" icon={Plus} onClick={onCreate}>
+            {onCreate && <Button size="sm" icon={Plus} onClick={onCreate}>
               {t(copy.newLabel)}
-            </Button>
+            </Button>}
           </div>
         </div>
 
@@ -530,7 +530,7 @@ export default function ProductList({ kind = "music", network, networks = [], sh
                 icon={copy.productIcon}
                 title={t(copy.emptyTitle)}
                 description={t(copy.emptyDescription)}
-                action={
+                action={onCreate &&
                   <Button icon={Plus} onClick={onCreate}>
                     {t(copy.newLabel)}
                   </Button>

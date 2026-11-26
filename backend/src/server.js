@@ -17,6 +17,10 @@ const contentIdRoutes = require("./routes/contentIdRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
 const emailRoutes = require("./routes/emailRoutes");
 const publicRoutes = require("./routes/publicRoutes");
+const ownershipPublicRoutes = require("./routes/ownershipPublicRoutes");
+const analyticsRoutes = require("./routes/analyticsRoutes");
+const analyticsBulkRoutes = require("./routes/analyticsBulkRoutes");
+const analyticsService = require("./services/analyticsService");
 const { processDueEmailSchedules } = require("./controllers/emailController");
 const { scheduleDraftAudioSweep } = require("./services/deliveryDraftService");
 const { reconcileInterruptedJobs } = require("./services/deliveryJobService");
@@ -33,6 +37,9 @@ app.use(
   })
 );
 
+app.use(morgan("dev"));
+app.use("/api/public", ownershipPublicRoutes);
+
 app.use(
   cors({
     origin: [FRONTEND_URL, "http://localhost:5173", "http://192.168.1.179:5173"],
@@ -44,7 +51,6 @@ app.use(
 
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan("dev"));
 
 app.get("/", (req, res) => {
   res.json({
@@ -72,6 +78,8 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/content-id", contentIdRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/email", emailRoutes);
+app.use("/api/analytics/bulk", analyticsBulkRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -104,6 +112,8 @@ function scheduleEmailNotifications() {
 const server = app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   scheduleEmailNotifications();
+  analyticsService.startWorker();
+  analyticsBulkRoutes.initialize();
   // CMS Delivery: a process restart interrupts any running delivery job; record it and make the
   // affected tracks retryable, then keep expiring audio uploaded from the form but never used.
   try {

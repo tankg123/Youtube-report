@@ -1,3 +1,4 @@
+import { useSystemSettings } from "../context/SystemSettingsContext";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Activity, AlertTriangle, DollarSign, Layers3, Loader2, TrendingUp, UsersRound, Video } from "lucide-react";
@@ -64,6 +65,7 @@ function StatCard({ title, value, sub, icon: Icon, tone = "blue" }) {
 }
 
 export default function PartnerReportDashboardPage() {
+  const { isSidebarVisible } = useSystemSettings();
   const navigate = useNavigate();
   const { t, tm, tk, language } = useI18n();
   const [month, setMonth] = useState(currentMonth());
@@ -159,6 +161,7 @@ export default function PartnerReportDashboardPage() {
                 {(data?.top_groups || []).length ? data.top_groups.map((group, index) => (
                   <button
                     key={group.group_id}
+                    disabled={!isSidebarVisible("/groups#detail")}
                     type="button"
                     onClick={() => openGroup(group)}
                     className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-emerald-50"

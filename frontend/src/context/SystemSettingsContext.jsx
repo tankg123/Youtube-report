@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import api from "../api/api";
 import { applyAccentPalette, DEFAULT_ACCENT_ID } from "../theme/accentPalettes";
 
 const SystemSettingsContext = createContext(null);
+const LOGO_COLORS = ["#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#0891b2", "#db2777"];
 
 export const defaultSystemSettings = {
   brand_name: "ANS Network",
@@ -30,22 +31,24 @@ function ensureFaviconLink() {
 
 export function SystemSettingsProvider({ children }) {
   const [settings, setSettings] = useState(defaultSystemSettings);
+  const [sidebar, setSidebar] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [logoColor] = useState(() => LOGO_COLORS[Math.floor(Math.random() * LOGO_COLORS.length)]);
 
-  async function refreshSettings() {
-    try {
-      const res = await api.get("/settings/system");
-      setSettings({ ...defaultSystemSettings, ...(res.data.settings || {}) });
-    } catch {
-      setSettings(defaultSystemSettings);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loadSettings = useCallback((signal) => api.get("/settings/system", { signal })
+    .then(({ data }) => {
+      if (signal?.aborted) return;
+      setSettings({ ...defaultSystemSettings, ...(data.settings || {}) });
+      setSidebar(data.sidebar || null);
+    })
+    .catch(() => { if (!signal?.aborted) setSettings(defaultSystemSettings); })
+    .finally(() => { if (!signal?.aborted) setLoading(false); }), []);
 
   useEffect(() => {
-    refreshSettings();
-  }, []);
+    const controller = new AbortController();
+    loadSettings(controller.signal);
+    return () => controller.abort();
+  }, [loadSettings]);
 
   useEffect(() => {
     document.title = settings.web_title || settings.brand_name || defaultSystemSettings.web_title;
@@ -55,14 +58,20 @@ export function SystemSettingsProvider({ children }) {
     }
   }, [settings]);
 
+  const hiddenItems = useMemo(() => new Set(sidebar?.hidden), [sidebar]);
+
   const value = useMemo(
     () => ({
       settings,
       loading,
+      logoColor,
       setSettings,
-      refreshSettings
+      sidebar,
+      setSidebar,
+      isSidebarVisible: (path) => Boolean(sidebar) && !hiddenItems.has(path),
+      refreshSettings: () => loadSettings()
     }),
-    [settings, loading]
+    [settings, loading, logoColor, sidebar, hiddenItems, loadSettings]
   );
 
   return <SystemSettingsContext.Provider value={value}>{children}</SystemSettingsContext.Provider>;

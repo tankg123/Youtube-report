@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { CloudUpload, Info, ListChecks, Plus, RefreshCw, ShieldCheck, Tag } from "lucide-react";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { useI18n } from "../context/I18nContext";
@@ -8,6 +8,7 @@ import { getDeliveryOptions, listCmsNetworks, listLocalLabels } from "../api/del
 import { STORAGE_KEYS } from "./assetDelivery/constants";
 import { getErrorMessage, readLocalStorage, writeLocalStorage } from "./assetDelivery/utils";
 import { Badge, Button, EmptyState, InlineMessage, Select, Spinner, Toast, useToast } from "./assetDelivery/shared";
+import useDeliveryViews from "./assetDelivery/useDeliveryViews";
 import ProductList from "./assetDelivery/ProductList";
 import ProductForm from "./assetDelivery/ProductForm";
 import ProductDetail from "./assetDelivery/ProductDetail";
@@ -24,7 +25,7 @@ function readStoredNetwork() {
 }
 
 export default function ContentIdDeliveryPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const { view, productId, openProduct, openNew, backToList } = useDeliveryViews("/content-id/delivery");
   // `networksTick` identifies the networks request in flight; `networksLoaded` is
   // derived from it so a Retry never has to set state synchronously in the effect.
   const [networksTick, setNetworksTick] = useState(0);
@@ -36,25 +37,6 @@ export default function ContentIdDeliveryPage() {
   const { toast, showToast } = useToast();
   const { t, tm } = useI18n();
   const optionsSeqRef = useRef(0);
-
-  // View routing: ?view=new → form, ?product=<id> → detail, otherwise the list.
-  const viewParam = searchParams.get("view");
-  const productParam = searchParams.get("product");
-  const view = viewParam === "new" ? "new" : productParam ? "detail" : "list";
-  const productId = view === "detail" ? productParam : null;
-
-  const openProduct = useCallback(
-    (id) => {
-      setSearchParams({ product: String(id) });
-    },
-    [setSearchParams]
-  );
-  const openNew = useCallback(() => {
-    setSearchParams({ view: "new" });
-  }, [setSearchParams]);
-  const backToList = useCallback(() => {
-    setSearchParams({});
-  }, [setSearchParams]);
 
   const networks = networksState.list;
   const networksLoaded = networksState.tick === networksTick;
@@ -164,7 +146,7 @@ export default function ContentIdDeliveryPage() {
   const handleDelivered = useCallback(
     (id) => {
       bumpRefresh();
-      if (id !== undefined && id !== null && id !== "") openProduct(id);
+      if (openProduct && id !== undefined && id !== null && id !== "") openProduct(id);
       else backToList();
     },
     [bumpRefresh, openProduct, backToList]
@@ -210,6 +192,7 @@ export default function ContentIdDeliveryPage() {
         />
       );
     }
+    if (!view) return <InlineMessage>{openProduct ? t("Open a saved item using its detail link.") : t("No visible subpages.")}</InlineMessage>;
     return <ProductList network={network} networks={networks} showToast={showToast} onOpen={openProduct} onCreate={openNew} refreshKey={refreshKey} />;
   }
 
@@ -257,7 +240,7 @@ export default function ContentIdDeliveryPage() {
               <Button variant="secondary" icon={RefreshCw} loading={optionsLoading} disabled={!networkId} onClick={reloadOptions}>
                 {t("Reload CMS options")}
               </Button>
-              {view !== "new" && (
+              {openNew && view !== "new" && (
                 <Button icon={Plus} disabled={!networksLoaded || !networks.length} onClick={openNew}>
                   {t("New product")}
                 </Button>

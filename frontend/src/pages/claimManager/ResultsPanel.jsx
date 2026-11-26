@@ -95,6 +95,7 @@ export default function ResultsPanel({
   onGroupedChange,
   busy,
   onOpenDetail,
+  onOpenThirdPartyUploads,
   onReleaseClaims,
   onActivateClaims,
   onRecheckClaim,
@@ -344,6 +345,7 @@ export default function ResultsPanel({
         busy={busy || loading}
         dimmed={loading}
         onOpenDetail={onOpenDetail}
+        onOpenThirdPartyUploads={onOpenThirdPartyUploads}
         onRelease={(claim) => onReleaseClaims([claim])}
         onRecheck={onRecheckClaim}
         onReinstate={onReinstateClaim}

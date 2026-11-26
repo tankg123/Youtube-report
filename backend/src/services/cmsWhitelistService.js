@@ -1,6 +1,6 @@
 const axios = require("axios");
 const {
-  getAccessToken,
+  withCmsAccessToken,
   getConnectedNetwork,
   getGoogleError,
   YOUTUBE_PARTNER_API
@@ -29,13 +29,12 @@ function normalizeWhitelistItem(item, network, contentOwnerId) {
 
 async function listWhitelistsFromCms(networkId) {
   const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
   const contentOwnerId = String(network.network_code || "").trim();
   const items = [];
   let pageToken = "";
 
   do {
-    const response = await axios.get(`${YOUTUBE_PARTNER_API}/whitelists`, {
+    const response = await withCmsAccessToken(network, (accessToken) => axios.get(`${YOUTUBE_PARTNER_API}/whitelists`, {
       params: {
         onBehalfOfContentOwner: contentOwnerId,
         maxResults: 50,
@@ -43,7 +42,7 @@ async function listWhitelistsFromCms(networkId) {
       },
       headers: { Authorization: `Bearer ${accessToken}` },
       timeout: 30000
-    });
+    }));
 
     const rows = response.data.items || response.data.whitelists || [];
     rows.forEach((row) => {
@@ -58,15 +57,14 @@ async function listWhitelistsFromCms(networkId) {
 
 async function insertWhitelistToCms(networkId, channelId) {
   const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
   const contentOwnerId = String(network.network_code || "").trim();
   const body = { id: channelId };
 
-  const response = await axios.post(`${YOUTUBE_PARTNER_API}/whitelists`, body, {
+  const response = await withCmsAccessToken(network, (accessToken) => axios.post(`${YOUTUBE_PARTNER_API}/whitelists`, body, {
     params: { onBehalfOfContentOwner: contentOwnerId },
     headers: { Authorization: `Bearer ${accessToken}` },
     timeout: 30000
-  });
+  }));
 
   return {
     network,
@@ -77,14 +75,13 @@ async function insertWhitelistToCms(networkId, channelId) {
 
 async function deleteWhitelistFromCms(networkId, whitelistId) {
   const network = getConnectedNetwork(networkId);
-  const accessToken = await getAccessToken(network);
   const contentOwnerId = String(network.network_code || "").trim();
 
-  await axios.delete(`${YOUTUBE_PARTNER_API}/whitelists/${encodeURIComponent(whitelistId)}`, {
+  await withCmsAccessToken(network, (accessToken) => axios.delete(`${YOUTUBE_PARTNER_API}/whitelists/${encodeURIComponent(whitelistId)}`, {
     params: { onBehalfOfContentOwner: contentOwnerId },
     headers: { Authorization: `Bearer ${accessToken}` },
     timeout: 30000
-  });
+  }));
 
   return { network, contentOwnerId };
 }

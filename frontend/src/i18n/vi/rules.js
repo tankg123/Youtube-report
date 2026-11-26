@@ -40,6 +40,15 @@ const POLICY_PART = /^(Monetize|Track|Block|Takedown|Rule) \((.+)\)$/;
 const POLICY_SCOPE = "(?:WW|(?:exclude )?[A-Z]{2}(?:, [A-Z]{2})*)";
 const POLICY_SUMMARY = new RegExp(`^(?:Monetize|Track|Block|Takedown|Rule) \\(${POLICY_SCOPE}\\)(?: · (?:(?:Monetize|Track|Block|Takedown|Rule) \\(${POLICY_SCOPE}\\)|review))*$`);
 
+// Analytics sync step labels embed a scope or a dimension key; the labels are keys of analyticsShared.js.
+const ANALYTICS_SCOPES = Object.freeze({ claimed: "Claimed content", self: "Partner channels", thirdParty: "Third-party content" });
+const ANALYTICS_DIMENSIONS = Object.freeze({
+  insightTrafficSourceType: "Traffic source", insightPlaybackLocationType: "Playback location", deviceType: "Device type",
+  operatingSystem: "Operating system", subscribedStatus: "Subscribed status", liveOrOnDemand: "Live or on demand",
+  youtubeProduct: "YouTube product", creatorContentType: "Content type", country: "Country", sharingService: "Sharing service",
+  adType: "Ad type", ageGroup: "Age group", gender: "Gender", day: "Day", video: "Video", channel: "Channel"
+});
+
 const word = (map, value) => map[value] || value;
 const step = (value) => word(STEPS, value);
 const trackStatus = (value) => word(TRACK_STATUSES, value);
@@ -83,9 +92,11 @@ export default [
   // --- CMS authorization, Google token service, quota (claimManagerService.js, googleContentIdService.js, deliveryStore.js) ---
   { pattern: /^(.+): the CMS authorization is missing the YouTube Partner scope\. Re-authorize it in Settings > Network\.$/, to: "{1}: ủy quyền CMS thiếu scope YouTube Partner. Ủy quyền lại trong Cài đặt > Network." },
   { pattern: /^CMS authorization failed: (.+)\. Re-authorize this CMS in Settings > Network\.$/, to: (match, { tm }) => `Ủy quyền CMS thất bại: ${tm(match[1])}. Ủy quyền lại CMS này trong Cài đặt > Network.` },
+  { pattern: /^CMS authorization failed: (.+)\.$/, to: (match, { tm }) => `Ủy quyền CMS thất bại: ${tm(match[1])}.` },
   { pattern: /^Google's token service answered (\d+) while refreshing the CMS access token \((.+)\); try again\.$/, to: (match, { tm }) => `Dịch vụ token của Google trả về ${match[1]} khi làm mới access token CMS (${tm(match[2])}); thử lại.` },
   { pattern: /^Google's token service could not be reached to refresh the CMS access token \((.+)\); try again\.$/, to: (match, { tm }) => `Không kết nối được dịch vụ token của Google để làm mới access token CMS (${tm(match[1])}); thử lại.` },
   { pattern: /^Google rejected this application's OAuth client while refreshing the CMS token \((.+)\)\. An administrator must check GOOGLE_CLIENT_ID \/ GOOGLE_CLIENT_SECRET on the server; re-authorizing the CMS will not help\.$/, to: (match, { tm }) => `Google từ chối OAuth client của ứng dụng này khi làm mới token CMS (${tm(match[1])}). Quản trị viên cần kiểm tra GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET trên server; ủy quyền lại CMS sẽ không giúp được.` },
+  { pattern: /^Google rejected the CMS token refresh \((.+)\)\. Check the issuing OAuth client and its matching secret on every server and worker, then retry the saved grant\.$/, to: (match, { tm }) => `Google từ chối làm mới token CMS (${tm(match[1])}). Kiểm tra OAuth client đã cấp token và secret tương ứng trên từng server và worker, rồi thử lại với token đã lưu.` },
   { pattern: /^(invalid_grant|invalid_client|unauthorized_client|invalid_request|invalid_scope|access_denied|unsupported_grant_type): (.+)$/, to: (match, { tm }) => `${match[1]}: ${tm(match[2])}` },
   { pattern: /^CMS permission denied: (.+)$/, to: (match, { tm }) => `CMS từ chối quyền truy cập: ${tm(match[1])}` },
   { pattern: /^Content ID API quota or rate limit reached for this project; wait for the reset or raise the quota in Google Cloud\. \((.+)\)$/, to: (match, { tm }) => `Đã chạm quota hoặc giới hạn tốc độ Content ID API của project này; chờ reset hoặc nâng quota trong Google Cloud. (${tm(match[1])})` },
@@ -191,6 +202,30 @@ export default [
   { pattern: /^CMS is connected but Network ID is missing for: (.+)\. Please fill ID Network in Settings > Network\.$/, to: "CMS đã kết nối nhưng thiếu Network ID cho: {1}. Điền ID Network trong Cài đặt > Network." },
   { pattern: /^CMS refresh token is missing for: (.+)\. Please re-auth CMS in Settings > Network\.$/, to: "Thiếu refresh token CMS cho: {1}. Ủy quyền lại CMS trong Cài đặt > Network." },
   { pattern: /^No usable connected CMS network found\. Current CMS auth state: (.+)\.$/, to: "Không tìm thấy network CMS đã kết nối nào dùng được. Trạng thái ủy quyền CMS hiện tại: {1}." },
+
+  // --- Analytics (analyticsValidate.js, analyticsService.js, analyticsSyncEngine.js, analyticsWarehouse.js) ---
+  { pattern: /^(\w+) must be a single value\.$/, to: "{1} phải là một giá trị duy nhất." },
+  { pattern: /^(\w+) must be one of: (.+)\.$/, to: "{1} phải là một trong: {2}." },
+  { pattern: /^(\w+) must use YYYY-MM-DD\.$/, to: "{1} phải theo định dạng YYYY-MM-DD." },
+  { pattern: /^(\w+) is not a valid date\.$/, to: "{1} không phải là ngày hợp lệ." },
+  { pattern: /^(\w+) must be an integer between (\d+) and (\d+)\.$/, to: "{1} phải là số nguyên từ {2} đến {3}." },
+  { pattern: /^(\w+) must be between (\d+) and (\d+)\.$/, to: "{1} phải nằm trong khoảng từ {2} đến {3}." },
+  { pattern: /^(\w+) must be true or false\.$/, to: "{1} phải là true hoặc false." },
+  { pattern: /^endDate must not be after (\d{4}-\d{2}-\d{2}), the last completed Pacific-time day\.$/, to: "endDate không được sau {1}, ngày hoàn chỉnh gần nhất theo giờ Thái Bình Dương." },
+  { pattern: /^Unknown channel IDs for this Content Owner: (.+?)(?: and (\d+) more)?\.$/, to: (match) => `Content Owner này không quản lý các ID kênh: ${match[1] ?? ""}${match[2] ? ` và ${match[2]} ID khác` : ""}.` },
+  { pattern: /^This sync needs about ([\d,.]+) requests; the limit is ([\d,.]+)\. Shorten the range or select fewer channels\.$/, to: "Lần đồng bộ này cần khoảng {1} request; giới hạn là {2}. Hãy rút ngắn khoảng ngày hoặc chọn ít kênh hơn." },
+  { pattern: /^The selection contains ([\d,.]+) rows; the limit is ([\d,.]+)\. Shorten the range or select fewer channels\.$/, to: "Lựa chọn này có {1} dòng; giới hạn là {2}. Hãy rút ngắn khoảng ngày hoặc chọn ít kênh hơn." },
+  { pattern: /^Server restarted before this sync finished\. It was queued again as job (\S+)\.$/, to: "Server khởi động lại trước khi lần đồng bộ này hoàn tất. Đã xếp lại vào hàng đợi với mã tác vụ {1}." },
+  { pattern: /^Queued again after a restart interrupted job (\S+)\.$/, to: "Đã xếp hàng lại sau khi việc khởi động lại làm gián đoạn tác vụ {1}." },
+  { pattern: /^Server restarted before this sync finished\. It was interrupted (\d+) times and was not queued again; start a new sync\.$/, to: "Server khởi động lại trước khi lần đồng bộ này hoàn tất. Lần đồng bộ đã bị gián đoạn {1} lần và không được xếp hàng lại; hãy chạy đồng bộ mới." },
+  // Export 400 of analyticsReadService.js (the "for this Content Owner" variant above is the sync-request message).
+  { pattern: /^Unknown channel IDs: (.+)\. Refresh the channel inventory or clear the channel filter\.$/, to: "Không xác định được các ID kênh: {1}. Hãy làm mới danh sách kênh hoặc bỏ bộ lọc kênh." },
+  { pattern: /^(\d+) channels listed, (\d+) added, (\d+) removed, (\d+) restored$/, to: "Đã liệt kê {1} kênh: thêm {2}, gỡ {3}, khôi phục {4}" },
+  { pattern: /^The channel listing failed; continuing with (\d+) stored channels$/, to: "Không liệt kê được kênh; tiếp tục với {1} kênh đã lưu" },
+  { pattern: /^Owner facts \((claimed|self|thirdParty)\)$/, to: (match, { t }) => `Số liệu Content Owner (${t(ANALYTICS_SCOPES[match[1]] ?? match[1] ?? "")})` },
+  { pattern: /^Breakdown by (\w+)$/, to: (match, { t }) => `Phân tích theo ${ANALYTICS_DIMENSIONS[match[1]] ? t(ANALYTICS_DIMENSIONS[match[1]]) : match[1] ?? ""}` },
+  { pattern: /^Request failed with status code (\d+)$/, to: "Yêu cầu thất bại với mã HTTP {1}" },
+  { pattern: /^timeout of (\d+)ms exceeded$/, to: "Hết thời gian chờ sau {1} ms" },
 
   // --- Generic "<resource> <id>: <message>" prefixes of the takedown report (last: the fixed sentences above win first) ---
   { pattern: /^Reference (\S+): (.+)$/, to: (match, { tm }) => `Reference ${match[1]}: ${tm(match[2])}` },

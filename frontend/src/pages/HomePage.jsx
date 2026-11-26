@@ -82,6 +82,7 @@ const homeCopy = {
     closingTitle: "Ready for a calmer monthly close?",
     closingBody: "Bring reports, sharing rules, payout files and partner communication into one dependable workspace.",
     actions: {
+      analytic: ["Analytic", "Content Owner performance, audience and estimated revenue"],
       reports: ["Report dashboard", "Revenue, paid and profit overview"],
       partnerDashboard: ["Partner dashboard", "Partner revenue and channel performance"],
       channels: ["Channel overview", "Portfolio status, assignment and sharing"],
@@ -155,6 +156,7 @@ const homeCopy = {
     closingTitle: "Sẵn sàng cho kỳ chốt doanh thu nhẹ nhàng hơn?",
     closingBody: "Đưa báo cáo, tỷ lệ chia, file thanh toán và giao tiếp đối tác vào một workspace đáng tin cậy.",
     actions: {
+      analytic: ["Analytic", "Hiệu suất Content Owner, khán giả và doanh thu ước tính"],
       reports: ["Dashboard báo cáo", "Tổng quan doanh thu, đã trả và lợi nhuận"],
       partnerDashboard: ["Dashboard đối tác", "Doanh thu đối tác và hiệu suất kênh"],
       channels: ["Tổng quan kênh", "Trạng thái, phân bổ và tỷ lệ chia"],
@@ -182,7 +184,7 @@ const deskIcons = [FileSpreadsheet, Workflow, FileCheck2];
 const chartBars = [32, 48, 42, 64, 58, 78, 70, 88, 82, 96];
 
 export default function HomePage({ publicView = false }) {
-  const { settings } = useSystemSettings();
+  const { settings, isSidebarVisible } = useSystemSettings();
   const { language, setLanguage } = useI18n();
   const { theme, setTheme } = useTheme();
   const auth = useAuth() || {};
@@ -197,16 +199,17 @@ export default function HomePage({ publicView = false }) {
   const greetingName = (language === "vi" ? nameParts.at(-1) : nameParts[0]) || brandName;
 
   const quickActions = [
+    { show: auth.canViewAnalytics, path: "/analytic/overview", icon: BarChart3, content: copy.actions.analytic },
     { show: auth.canViewPartnerDashboard, path: "/partner-dashboard", icon: TrendingUp, content: copy.actions.partnerDashboard },
     { show: auth.canViewReports, path: "/report-dashboard", icon: BarChart3, content: copy.actions.reports },
     { show: auth.canViewChannelManagement, path: "/channel-management", icon: Network, content: copy.actions.channels },
     { show: auth.canViewPartner, path: "/partners/overview", icon: UsersRound, content: copy.actions.partners },
-    { show: auth.canViewContentId, path: "/content-id", icon: Disc3, content: auth.canViewContentIdFull ? copy.actions.contentId : copy.actions.contentIdClaim },
+    { show: auth.canViewContentId, path: auth.canViewContentIdFull && isSidebarVisible("/content-id/creator") ? "/content-id/creator" : "/content-id/claims", icon: Disc3, content: auth.canViewContentIdFull ? copy.actions.contentId : copy.actions.contentIdClaim },
     { show: auth.canViewExpense, path: "/expenses/overview", icon: WalletCards, content: copy.actions.expenses },
     { show: auth.canViewEmail, path: "/email/notification", icon: Mail, content: copy.actions.email },
     { show: auth.canViewPartnerGroups, path: "/groups", icon: Headphones, content: copy.actions.groups },
     { show: auth.canViewAccount, path: "/account", icon: ShieldCheck, content: copy.actions.account }
-  ].filter((item) => item.show);
+  ].filter((item) => item.show && isSidebarVisible(item.path));
 
   const primaryAction = quickActions[0];
   const secondaryAction = quickActions[1];

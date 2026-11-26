@@ -50,6 +50,10 @@ router.put("/codes/:id", allowRoles(...CONTENT_ID_ROLES), updateCode);
 router.delete("/codes/:id", allowRoles(...CONTENT_ID_ROLES), deleteCode);
 
 router.get("/cms-networks", allowRoles(...CLAIM_MANAGER_ROLES), listCmsNetworks);
+router.get("/asset-check/search", allowRoles(...CONTENT_ID_ROLES), claims.searchArtistAssets);
+router.get("/ownership-email", allowRoles(...CONTENT_ID_ROLES), claims.checkOwnershipEmail);
+router.post("/asset-check/:networkId/export", allowRoles(...CONTENT_ID_ROLES), claims.exportSelectedAssets);
+router.get("/asset-check/:networkId/:assetId", allowRoles(...CONTENT_ID_ROLES), claims.getAssetOwnership);
 
 // Claim Manager: look up the claims a CMS owns and change their status through the Partner API:
 // release (-> inactive), reinstate (inactive -> active) and confirm (potential -> active), each
@@ -57,6 +61,7 @@ router.get("/cms-networks", allowRoles(...CLAIM_MANAGER_ROLES), listCmsNetworks)
 // their labels.
 router.get("/claims/accounts", allowRoles(...CLAIM_MANAGER_ROLES), claims.listAccounts);
 router.post("/claims/search", allowRoles(...CLAIM_MANAGER_ROLES), claims.search);
+router.post("/claims/videos/:videoId/third-party-uploads", allowRoles(...CLAIM_MANAGER_ROLES), claims.getThirdPartyUploads);
 router.post("/claims/release", allowRoles(...CLAIM_MANAGER_ROLES), claims.release);
 router.post("/claims/reinstate", allowRoles(...CLAIM_MANAGER_ROLES), claims.reinstate);
 router.post("/claims/confirm", allowRoles(...CLAIM_MANAGER_ROLES), claims.confirm);

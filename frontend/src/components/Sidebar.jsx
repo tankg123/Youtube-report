@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   BriefcaseBusiness,
@@ -8,7 +8,6 @@ import {
   CircleDollarSign,
   Clapperboard,
   CloudUpload,
-  Database,
   Disc3,
   FileAudio,
   FileSignature,
@@ -35,26 +34,26 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
-
-const logoColors = ["#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#0891b2", "#db2777"];
+import BrandLogoImage from "./BrandLogoImage";
+import AnalyticsNavigation from "./AnalyticsNavigation";
 
 export default function Sidebar() {
   const location = useLocation();
+  const { canViewAnalytics } = useAuth();
   const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
   const { t } = useI18n();
   const { theme } = useTheme();
-  const { settings } = useSystemSettings();
+  const { settings, logoColor, isSidebarVisible, sidebar, loading, refreshSettings } = useSystemSettings();
   const isDark = theme === "dark";
   const useUploadedLogo = settings.logo_mode === "upload" && settings.logo_data_url;
-  const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/exchange-rates", "/companies", "/groups"];
-  const contentIdPaths = ["/content-id/creator", "/content-id/delivery", "/content-id/video-delivery", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/whitelists", "/content-id/labels", "/content-id/artists"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/delivery", "/content-id/video-delivery", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/check", "/content-id/ownership-email", "/content-id/whitelists", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
   const emailPaths = ["/email/notification"];
-  const settingsPaths = ["/settings/system", "/settings/content-id", "/networks"];
-  const hasAnyAppAccess = canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
+  const settingsPaths = ["/settings/system", "/settings/sidebar", "/settings/content-id", "/networks"];
+  const hasAnyAppAccess = canViewAnalytics || canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
   const [contentIdOpen, setContentIdOpen] = useState(contentIdPaths.includes(location.pathname));
@@ -71,11 +70,12 @@ export default function Sidebar() {
     });
   }
 
+  const visiblePage = (item) => isSidebarVisible(item.path);
   const channelMenus = [
     { name: t("Overview"), path: "/channel-management", icon: Video },
     { name: t("Collaborators"), path: "/channel-management/collaborators", icon: Users },
     { name: t("Sharing"), path: "/channel-management/sharing", icon: Percent }
-  ];
+  ].filter(visiblePage);
 
   const reportMenus = [
     { name: t("Partner Dashboard"), path: "/partner-dashboard", icon: BarChart3, show: canViewPartnerDashboard },
@@ -86,17 +86,25 @@ export default function Sidebar() {
     { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign, show: canViewReports },
     { name: t("company"), path: "/companies", icon: BriefcaseBusiness, show: canViewReports },
     { name: t("group"), path: "/groups", icon: UsersRound, show: canViewReports || canViewPartnerDashboard }
-  ].filter((item) => item.show);
+  ].filter((item) => item.show && visiblePage(item));
+
+  const expenseMenus = [
+    { name: t("overview"), path: "/expenses/overview", icon: BarChart3 },
+    { name: t("expenseGroups"), path: "/expenses/categories", icon: ReceiptText },
+    { name: t("transactions"), path: "/expenses/transactions", icon: FileSpreadsheet },
+    { name: t("accounts"), path: "/expenses/accounts", icon: Landmark },
+    { name: t("revenue"), path: "/expenses/revenue", icon: CircleDollarSign }
+  ].filter(visiblePage);
 
   const partnerMenus = [
     { name: t("Overview"), path: "/partners/overview", icon: BarChart3 },
     { name: t("Partner"), path: "/partners/list", icon: Building2 },
     { name: t("Contract"), path: "/partners/contracts", icon: FileSignature }
-  ];
+  ].filter(visiblePage);
 
   const emailMenus = [
     { name: t("Email Notification"), path: "/email/notification", icon: Mail }
-  ];
+  ].filter(visiblePage);
 
   const contentIdMenus = [
     { name: t("Creator Soundrecording & Art"), path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
@@ -105,22 +113,25 @@ export default function Sidebar() {
     { name: t("Web Asset Reference"), path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
     { name: t("Product Manager"), path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
     { name: t("Claim Manager"), path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+    { name: t("Check"), path: "/content-id/check", icon: PackageSearch, show: canViewContentIdFull },
+    { name: t("Ownership email"), path: "/content-id/ownership-email", icon: Mail, show: canViewContentIdFull },
     { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
     { name: t("Label"), path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
     { name: t("Artist"), path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
-  ].filter((item) => item.show);
+  ].filter((item) => item.show && visiblePage(item));
 
   const menus = [
     ...(canViewAccount ? [{ name: t("account"), path: "/account", icon: UserRound }] : [])
-  ];
+  ].filter(visiblePage);
 
   const settingsMenus = [
     { name: t("systemSettings"), path: "/settings/system", icon: Settings },
+    { name: t("Sidebar visibility"), path: "/settings/sidebar", icon: Settings },
     { name: t("network"), path: "/networks", icon: Network },
     { name: t("Content ID Setting"), path: "/settings/content-id", icon: Disc3 }
   ].filter((item) => {
-    if (item.path === "/settings/system" || item.path === "/networks") return canViewSettings;
-    return canViewContentIdSettings;
+    if (!visiblePage(item)) return false;
+    return item.path === "/settings/content-id" ? canViewContentIdSettings : canViewSettings;
   });
 
   return (
@@ -152,8 +163,8 @@ export default function Sidebar() {
           ].join(" ")}
           style={{ backgroundColor: useUploadedLogo ? "transparent" : logoColor }}
         >
-          <img
-            src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"}
+          <BrandLogoImage
+            src={useUploadedLogo ? settings.logo_data_url : undefined}
             alt={settings.brand_name || "ANS Network"}
             className={useUploadedLogo ? "w-full h-full object-cover" : "w-16 h-16 object-contain"}
           />
@@ -173,7 +184,8 @@ export default function Sidebar() {
           isDark ? "bg-slate-950/20" : "bg-slate-50/50"
         ].join(" ")}
       >
-        {hasAnyAppAccess && (
+        {!loading && !sidebar && <button type="button" onClick={refreshSettings} className="px-4 py-3 text-sm font-semibold">{t("Reload menu")}</button>}
+        {hasAnyAppAccess && isSidebarVisible("/home") && (
           <Link
             to="/home"
             className={[
@@ -190,9 +202,11 @@ export default function Sidebar() {
           </Link>
         )}
 
+        {canViewAnalytics && <AnalyticsNavigation collapsed={sidebarCollapsed} dark={isDark} />}
+
         {(canViewReports || canViewPartnerDashboard || canViewEmail || canViewChannelManagement || canViewContentId || canViewExpense || canViewPartner) && (
           <>
-          {canViewChannelManagement && (
+          {canViewChannelManagement && channelMenus.length > 0 && (
           <div>
             <button
               type="button"
@@ -241,7 +255,7 @@ export default function Sidebar() {
           </div>
           )}
 
-          {(canViewReports || canViewPartnerDashboard) && (
+          {(canViewReports || canViewPartnerDashboard) && reportMenus.length > 0 && (
           <div>
             <button
               type="button"
@@ -290,7 +304,7 @@ export default function Sidebar() {
           </div>
           )}
 
-          {canViewContentId && (
+          {canViewContentId && contentIdMenus.length > 0 && (
           <div>
             <button
               type="button"
@@ -339,7 +353,7 @@ export default function Sidebar() {
           </div>
           )}
 
-          {canViewExpense && (
+          {canViewExpense && expenseMenus.length > 0 && (
           <div>
             <button
               type="button"
@@ -360,13 +374,7 @@ export default function Sidebar() {
 
             {expenseOpen && !sidebarCollapsed && (
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
-                {[
-                  { name: t("overview"), path: "/expenses/overview", icon: BarChart3 },
-                  { name: t("expenseGroups"), path: "/expenses/categories", icon: ReceiptText },
-                  { name: t("transactions"), path: "/expenses/transactions", icon: FileSpreadsheet },
-                  { name: t("accounts"), path: "/expenses/accounts", icon: Landmark },
-                  { name: t("revenue"), path: "/expenses/revenue", icon: CircleDollarSign }
-                ].map((item) => {
+                {expenseMenus.map((item) => {
                   const Icon = item.icon;
                   const active = location.pathname === item.path;
                   return (
@@ -394,7 +402,7 @@ export default function Sidebar() {
           </div>
           )}
 
-          {canViewPartner && (
+          {canViewPartner && partnerMenus.length > 0 && (
           <div>
             <button
               type="button"
@@ -443,7 +451,7 @@ export default function Sidebar() {
           </div>
           )}
 
-          {canViewEmail && (
+          {canViewEmail && emailMenus.length > 0 && (
           <div>
             <button
               type="button"
@@ -517,7 +525,7 @@ export default function Sidebar() {
           );
         })}
 
-        {canViewPartnerGroups && !canViewReports && !canViewPartnerDashboard && (
+        {isSidebarVisible("/groups") && canViewPartnerGroups && !canViewReports && !canViewPartnerDashboard && (
           <Link
             to="/groups"
             className={[
@@ -536,7 +544,7 @@ export default function Sidebar() {
 
       </nav>
 
-      {(canViewSettings || canViewContentIdSettings) && (
+      {(canViewSettings || canViewContentIdSettings) && settingsMenus.length > 0 && (
         <div className={["shrink-0 border-t p-3", isDark ? "border-slate-800" : "border-slate-200"].join(" ")}>
           <button
             type="button"

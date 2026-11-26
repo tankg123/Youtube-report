@@ -1,4 +1,4 @@
-import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, TERRITORY_NAME_BY_CODE, VIDEO_EXTENSIONS } from "./constants";
+import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, TERRITORY_NAME_BY_CODE, VIDEO_EXTENSIONS } from "./constants.js";
 import { formatDate as formatLocalizedDate, formatDateTime as formatLocalizedDateTime, getLanguage, normalizeLanguage, t, tk } from "../../i18n/index.js";
 
 // ---------------------------------------------------------------------------
@@ -597,15 +597,23 @@ export function getErrorMessage(error) {
   }
   if (error.code === "ECONNABORTED") return tk("Request timed out");
   const data = error.response?.data;
+  const status = Number(error.response?.status);
+  const htmlResponse = typeof data === "string" && /<!doctype\s+html\b|<html\b|<head\b|<body\b/i.test(data);
   // Blob responses (responseType: "blob") carry the error body as a Blob; fall through to the generic message.
   if (data && !(typeof Blob !== "undefined" && data instanceof Blob)) {
-    if (typeof data === "string") return data;
+    if (typeof data === "string" && !htmlResponse && status !== 413) return data;
+    // Keep structured backend validation messages, including its configured media size limit.
     if (data.message) return data.message;
     if (data.error && typeof data.error === "string") return data.error;
     if (Array.isArray(data.errors) && data.errors.length) {
       return data.errors.map((item) => item.message || item.error || String(item)).join("; ");
     }
   }
+  // A reverse proxy can reject the upload before it ever reaches the application.
+  if (status === 413) {
+    return tk("The file exceeds the server's upload size limit (HTTP 413). Ask an administrator to increase the limit, then retry the upload.");
+  }
+  if (htmlResponse) return tk("The server returned an error page. Please try again or contact an administrator.");
   return error.message || tk("Request failed");
 }
 

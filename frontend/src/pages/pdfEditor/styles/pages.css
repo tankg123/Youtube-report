@@ -1,0 +1,714 @@
+/*
+ * PDF editor (/pdf): the Pages panel, the Outline panel, the page organiser and their dialogs (pages/).
+ * Every selector starts with .pdfx-root; the tokens (--pdfx-*) come from shell.css.
+ * Paper never follows the theme: what lies ON a thumbnail (badges, the check box, the menu button) has fixed
+ * colours; everything around it follows the tokens.
+ */
+
+/* ---- the Pages panel ---------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-pagespanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pdfx-root .pdfx-pagespanel-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 4px 0 12px;
+  border-bottom: 1px solid var(--pdfx-border);
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-pagespanel-bar .pdfx-btn {
+  min-width: 30px;
+  height: 30px;
+}
+
+.pdfx-root .pdfx-pagespanel-foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-pagespanel-foot .pdfx-btn {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-pagespanel-foot .pdfx-pagespanel-organise {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-pages-empty,
+.pdfx-root .pdfx-outline-empty {
+  padding: 28px 16px;
+  color: var(--pdfx-text-2);
+  text-align: center;
+}
+
+.pdfx-root .pdfx-pages-host {
+  display: contents;
+}
+
+/* ---- the grid of page tiles (panel and organiser) ------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-pagegrid-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.pdfx-root .pdfx-pagegrid-wrap {
+  position: relative;
+  box-sizing: border-box;
+  padding: 10px 6px 14px 10px;
+}
+
+.pdfx-root .pdfx-pagegrid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px 6px;
+}
+
+.pdfx-root .pdfx-pagetile {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  padding: 5px 5px 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  outline: none;
+  color: var(--pdfx-text-2);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: pan-y;
+}
+
+.pdfx-root .pdfx-pagetile:hover {
+  background: var(--pdfx-surface-3);
+}
+
+.pdfx-root .pdfx-pagetile[data-selected="true"] {
+  border-color: var(--pdfx-accent-ink);
+  background: var(--pdfx-accent-soft);
+}
+
+.pdfx-root .pdfx-pagetile:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: 1px;
+}
+
+.pdfx-root .pdfx-pagetile[data-dragging="true"] {
+  opacity: 0.4;
+}
+
+.pdfx-root .pdfx-pagegrid[data-dragging="true"],
+.pdfx-root .pdfx-pagegrid[data-dragging="true"] .pdfx-pagetile {
+  cursor: grabbing;
+}
+
+.pdfx-root .pdfx-pagetile-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* the sheet of paper: always light */
+.pdfx-root .pdfx-pagetile-sheet {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgb(100 116 139 / 0.55), 0 1px 3px rgb(15 23 42 / 0.18);
+  color-scheme: light;
+}
+
+.pdfx-root .pdfx-pagetile-sheet .pdfx-thumbnail {
+  box-shadow: none;
+}
+
+.pdfx-root .pdfx-pagetile[data-current="true"] .pdfx-pagetile-sheet {
+  box-shadow: 0 0 0 2px var(--pdfx-accent), 0 0 0 4px var(--pdfx-accent-soft-2);
+}
+
+.pdfx-root .pdfx-pagetile-image {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* which file a page comes from, when the document has several */
+.pdfx-root .pdfx-pagetile-source {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 4px;
+  border-radius: 2px;
+}
+
+.pdfx-root .pdfx-pagetile-badges {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  display: flex;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-pagetile-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 9px;
+  background: rgb(15 23 42 / 0.8);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.pdfx-root .pdfx-pagetile-badge-marks {
+  background: #dc2626;
+}
+
+.pdfx-root .pdfx-pagetile-check {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #64748b;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 0.94);
+  color: #ffffff;
+}
+
+.pdfx-root .pdfx-pagetile-checkable:hover .pdfx-pagetile-check,
+.pdfx-root .pdfx-pagetile-checkable:focus-visible .pdfx-pagetile-check,
+.pdfx-root .pdfx-pagetile-checkable[data-selected="true"] .pdfx-pagetile-check {
+  display: inline-flex;
+}
+
+.pdfx-root .pdfx-pagetile[data-selected="true"] .pdfx-pagetile-check {
+  border-color: var(--pdfx-accent);
+  background: var(--pdfx-accent);
+  color: var(--pdfx-on-accent);
+}
+
+@media (hover: none) {
+  .pdfx-root .pdfx-pagetile-checkable .pdfx-pagetile-check,
+  .pdfx-root .pdfx-pagetile .pdfx-pagetile-more {
+    display: inline-flex;
+  }
+}
+
+.pdfx-root .pdfx-pagetile-more {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(15 23 42 / 0.76);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-pagetile:hover .pdfx-pagetile-more,
+.pdfx-root .pdfx-pagetile:focus-visible .pdfx-pagetile-more,
+.pdfx-root .pdfx-pagetile-more:focus-visible {
+  display: inline-flex;
+}
+
+.pdfx-root .pdfx-pagetile-more:hover {
+  background: rgb(15 23 42 / 0.95);
+}
+
+.pdfx-root .pdfx-pagetile-more:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: -2px;
+}
+
+.pdfx-root .pdfx-pagegrid[data-dragging="true"] .pdfx-pagetile-more {
+  display: none;
+}
+
+.pdfx-root .pdfx-pagetile-number {
+  box-sizing: border-box;
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+}
+
+.pdfx-root .pdfx-pagetile[data-current="true"] .pdfx-pagetile-number {
+  background: var(--pdfx-accent);
+  color: var(--pdfx-on-accent);
+}
+
+/* where dragged pages land: a 3 px bar between two tiles */
+.pdfx-root .pdfx-pagegrid-bar {
+  position: absolute;
+  z-index: 3;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--pdfx-accent);
+  box-shadow: 0 0 0 1px var(--pdfx-surface);
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-pagegrid-marquee {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  border: 1px solid var(--pdfx-accent);
+  background: var(--pdfx-accent-soft);
+  pointer-events: none;
+}
+
+/* what follows the pointer while pages are dragged */
+.pdfx-root .pdfx-pagegrid-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 46;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--pdfx-accent);
+  color: var(--pdfx-on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--pdfx-shadow);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.pdfx-root .pdfx-pagegrid-ghost:not([hidden]) {
+  display: inline-flex;
+}
+
+/* ---- the menus (rendered in the context layer of the editor) -------------------------------------------------------- */
+
+/* two classes: shell.css gives .pdfx-menu-anchor another position, and the order of the two files is not fixed */
+.pdfx-root .pdfx-menu-anchor.pdfx-pages-menu {
+  position: fixed;
+  display: block;
+  width: 0;
+  height: 0;
+}
+
+.pdfx-root .pdfx-pages-menu .pdfx-menu {
+  top: 0;
+}
+
+/* ---- the organiser -------------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-organiser {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.pdfx-root .pdfx-organiser-bar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--pdfx-border);
+  background: var(--pdfx-surface);
+}
+
+.pdfx-root .pdfx-organiser-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-organiser-count {
+  min-width: 76px;
+  padding: 0 6px;
+  color: var(--pdfx-text-2);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-organiser-label {
+  margin: 0 2px 0 4px;
+  color: var(--pdfx-text-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-organiser-spacer {
+  flex: 1 1 auto;
+}
+
+.pdfx-root .pdfx-organiser-bar .pdfx-btn-text {
+  padding: 0 10px;
+}
+
+.pdfx-root .pdfx-organiser-sizes {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+}
+
+.pdfx-root .pdfx-organiser-sizes .pdfx-btn {
+  min-width: 30px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-organiser-sizes .pdfx-btn[aria-checked="true"] {
+  background: var(--pdfx-accent-soft);
+  color: var(--pdfx-accent-ink);
+}
+
+.pdfx-root .pdfx-organiser-hint {
+  flex: none;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--pdfx-border);
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-organiser .pdfx-pagegrid-wrap {
+  min-height: 100%;
+  padding: 18px 24px 56px;
+}
+
+.pdfx-root .pdfx-organiser .pdfx-pagegrid {
+  gap: 16px 14px;
+}
+
+.pdfx-root .pdfx-organiser .pdfx-pagetile {
+  padding: 8px 8px 5px;
+}
+
+.pdfx-root .pdfx-organiser .pdfx-pagetile-number {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.pdfx-root .pdfx-organiser .pdfx-pagetile-more {
+  width: 26px;
+  height: 26px;
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-organiser .pdfx-pagegrid-wrap {
+  padding: 12px 12px 48px;
+}
+
+/* ---- the Outline panel ---------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-outline {
+  padding: 6px 4px 14px;
+}
+
+.pdfx-root .pdfx-outline-tree,
+.pdfx-root .pdfx-outline-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-outline-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 4px 8px 4px calc(4px + (var(--pdfx-outline-level, 1) - 1) * 14px);
+  border-radius: 6px;
+  outline: none;
+  color: var(--pdfx-text);
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-outline-row:hover {
+  background: var(--pdfx-surface-3);
+}
+
+.pdfx-root .pdfx-outline-row:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: -2px;
+}
+
+.pdfx-root .pdfx-outline-row[data-current="true"] {
+  background: var(--pdfx-accent-soft);
+  color: var(--pdfx-accent-ink);
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-outline-row[data-file="true"] {
+  color: var(--pdfx-text-2);
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-outline-row[data-has-page="false"] {
+  cursor: default;
+}
+
+.pdfx-root .pdfx-outline-twisty {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--pdfx-text-3);
+}
+
+.pdfx-root .pdfx-outline-twisty[data-expandable="true"] {
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-outline-twisty[data-expandable="true"]:hover {
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-outline-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-outline-page {
+  flex: none;
+  margin-left: 6px;
+  color: var(--pdfx-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+
+/* ---- the forms of the dialogs ---------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-pform {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--pdfx-text);
+  font-size: 13px;
+}
+
+/* the dialog frame spaces the children of its body: the form spaces its own rows */
+.pdfx-root .pdfx-dialog-body .pdfx-pform > * {
+  margin-top: 0;
+}
+
+.pdfx-root .pdfx-pform-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: start;
+}
+
+.pdfx-root .pdfx-pform-label {
+  padding-top: 8px;
+  color: var(--pdfx-text-2);
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-pform-control {
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-pform-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-pform .pdfx-input {
+  height: 34px;
+  font-size: 13px;
+}
+
+.pdfx-root .pdfx-pform .pdfx-input[aria-invalid="true"] {
+  border-color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-pform-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-pform-number {
+  width: 84px;
+}
+
+.pdfx-root .pdfx-pform-unit {
+  color: var(--pdfx-text-2);
+}
+
+.pdfx-root .pdfx-pform-note {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-pform-error {
+  margin-top: 4px;
+  color: var(--pdfx-danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-pform-error:empty {
+  display: none;
+}
+
+.pdfx-root .pdfx-pform-choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-pform-choice-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-pform-choice-item input,
+.pdfx-root .pdfx-pform-check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--pdfx-accent);
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-pform-choice-on {
+  border-color: var(--pdfx-accent-ink);
+  background: var(--pdfx-accent-soft);
+}
+
+.pdfx-root .pdfx-pform-choice-item:focus-within {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: 2px;
+}
+
+.pdfx-root .pdfx-pform-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-pform-check input {
+  margin-top: 1px;
+}
+
+.pdfx-root .pdfx-pform-check input:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: 2px;
+}
+
+.pdfx-root .pdfx-pform-check[data-disabled="true"] {
+  color: var(--pdfx-text-3);
+  cursor: not-allowed;
+}
+
+.pdfx-root .pdfx-pform-files {
+  max-height: 104px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 8px;
+  background: var(--pdfx-surface-2);
+  font-size: 12px;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-pform-files-more {
+  color: var(--pdfx-text-2);
+}
+
+@media (max-width: 520px) {
+  .pdfx-root .pdfx-pform-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pdfx-root .pdfx-pform-label {
+    padding-top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pdfx-root .pdfx-pagetile {
+    transition: background-color 100ms, border-color 100ms;
+  }
+}

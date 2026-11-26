@@ -15,6 +15,7 @@ const {
   toFlag
 } = require("../services/revenueTaxService");
 const cmsAuthService = require("../services/googleCmsAuthService");
+const { renewSavedGrant } = require("../services/googleContentIdService");
 const { normalizedRoles } = require("../middlewares/authMiddleware");
 
 function decodeXml(value = "") {
@@ -2111,6 +2112,7 @@ exports.getPartnerDashboard = (req, res) => {
 const NETWORK_PUBLIC_FIELDS = `
   id, name, network_code, description,
   cms_auth_status, cms_auth_email, cms_auth_name, cms_auth_scopes,
+  LENGTH(TRIM(COALESCE(cms_refresh_token, ''))) > 0 AS has_saved_grant,
   cms_token_expiry, cms_authed_at, cms_auth_error,
   created_at, updated_at
 `;
@@ -2215,21 +2217,29 @@ exports.deleteNetwork = (req, res) => {
 
 exports.getNetworkCmsAuthUrl = (req, res) => {
   try {
-    const network = db.prepare("SELECT id, name FROM networks WHERE id = ?").get(req.params.id);
+    const network = db.prepare("SELECT id, cms_auth_generation FROM networks WHERE id = ?").get(req.params.id);
     if (!network) {
       return res.status(404).json({ success: false, message: "Network not found" });
     }
 
-    const url = cmsAuthService.buildAuthUrl(network.id);
-    db.prepare(`
-      UPDATE networks
-      SET cms_auth_status = 'pending', cms_auth_error = NULL, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(network.id);
-
+    const url = cmsAuthService.buildAuthUrl(network.id, network.cms_auth_generation);
     res.json({ success: true, data: { url } });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not create Google CMS auth URL", error: error.message });
+  }
+};
+
+exports.retryNetworkCmsGrant = async (req, res) => {
+  try {
+    await renewSavedGrant(req.params.id);
+    return res.json({ success: true });
+  } catch (error) {
+    const status = error.oauthClientMisconfigured ? 503 : Number(error.status) || (error.tokenRefreshTransient ? 502 : 500);
+    return res.status(status).json({
+      success: false,
+      message: status === 500 ? "Could not check the saved CMS connection." : error.message,
+      reason: error.reason
+    });
   }
 };
 
@@ -2241,25 +2251,35 @@ exports.handleNetworkCmsAuthCallback = async (req, res) => {
     networkId = state.network_id;
 
     if (req.query.error) {
-      db.prepare(`
-        UPDATE networks
-        SET cms_auth_status = 'error', cms_auth_error = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(String(req.query.error), networkId);
       return res.redirect(redirectCmsAuth(req, "error", { network_id: networkId, message: req.query.error }));
     }
 
     const code = String(req.query.code || "");
     if (!code) throw new Error("Missing Google OAuth code");
 
-    const existing = db.prepare("SELECT id, cms_refresh_token FROM networks WHERE id = ?").get(networkId);
+    const existing = db.prepare("SELECT cms_auth_status, cms_auth_generation FROM networks WHERE id = ?").get(networkId);
     if (!existing) throw new Error("Network not found");
 
-    const token = await cmsAuthService.exchangeCode(code);
-    const user = token.access_token ? await cmsAuthService.getGoogleUser(token.access_token) : {};
-    const expiresAt = token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString() : null;
+    // Older links were issued for pending connections, which the migration may have restored.
+    const legacyState = !Object.hasOwn(state, "auth_generation");
+    const generation = state.auth_generation ?? null;
+    const staleMessage = "The CMS connection changed while this authorization was open. Start again in Settings > Network.";
+    const legacyStatus = existing.cms_auth_status === "pending" || existing.cms_auth_status === "connected";
+    if (existing.cms_auth_generation !== generation || (legacyState && !legacyStatus)) {
+      throw new Error(staleMessage);
+    }
 
-    db.prepare(`
+    const token = await cmsAuthService.exchangeCode(code, state.oauth_client_id);
+    const accessToken = typeof token?.access_token === "string" ? token.access_token.trim() : "";
+    const refreshToken = typeof token?.refresh_token === "string" ? token.refresh_token.trim() : "";
+    if (!accessToken) throw new Error("Google did not return a CMS access token. Start again in Settings > Network.");
+    if (!refreshToken) throw new Error("Google did not grant offline CMS access. Authorize again to allow automatic renewal.");
+
+    const expiresIn = Number(token.expires_in);
+    const expiresAt = Number.isFinite(expiresIn) && expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000).toISOString() : null;
+    const user = await cmsAuthService.getGoogleUser(accessToken).catch(() => null);
+
+    const result = db.prepare(`
       UPDATE networks
       SET cms_auth_status = 'connected',
           cms_auth_email = ?,
@@ -2267,30 +2287,29 @@ exports.handleNetworkCmsAuthCallback = async (req, res) => {
           cms_auth_scopes = ?,
           cms_access_token = ?,
           cms_refresh_token = ?,
+          cms_oauth_client_id = ?, cms_refresh_lock_id = NULL, cms_refresh_lock_until = NULL,
           cms_token_expiry = ?,
           cms_authed_at = CURRENT_TIMESTAMP,
           cms_auth_error = NULL,
+          cms_auth_generation = ?,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = ? AND cms_auth_generation IS ?
     `).run(
-      user.email || "",
-      user.name || "",
+      user?.email || "",
+      user?.name || "",
       token.scope || cmsAuthService.CMS_SCOPES.join(" "),
-      token.access_token || "",
-      token.refresh_token || existing.cms_refresh_token || "",
+      accessToken,
+      refreshToken,
+      token.oauth_client_id,
       expiresAt,
-      networkId
+      crypto.randomUUID(),
+      networkId,
+      generation
     );
+    if (!result.changes) throw new Error(staleMessage);
 
     return res.redirect(redirectCmsAuth(req, "success", { network_id: networkId }));
   } catch (error) {
-    if (networkId) {
-      db.prepare(`
-        UPDATE networks
-        SET cms_auth_status = 'error', cms_auth_error = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(error.message, networkId);
-    }
     return res.redirect(redirectCmsAuth(req, "error", { network_id: networkId, message: error.message }));
   }
 };
@@ -2310,12 +2329,14 @@ exports.disconnectNetworkCmsAuth = (req, res) => {
           cms_auth_scopes = NULL,
           cms_access_token = NULL,
           cms_refresh_token = NULL,
+          cms_oauth_client_id = NULL, cms_refresh_lock_id = NULL, cms_refresh_lock_until = NULL,
           cms_token_expiry = NULL,
           cms_authed_at = NULL,
           cms_auth_error = NULL,
+          cms_auth_generation = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(req.params.id);
+    `).run(crypto.randomUUID(), req.params.id);
 
     res.json({ success: true, message: "CMS auth disconnected" });
   } catch (error) {

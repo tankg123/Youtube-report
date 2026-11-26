@@ -1,4 +1,5 @@
 import axios from "axios";
+import { SESSION_ENDED_EVENT, keepsPageOnSessionEnd, loginPathFor } from "../utils/returnTo";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4015/api";
 const BACKEND_API_KEY = import.meta.env.VITE_BACKEND_API_KEY || "";
@@ -33,8 +34,12 @@ api.interceptors.response.use(
       localStorage.removeItem("user");
       localStorage.removeItem("token_expires_at");
 
-      if (!window.location.pathname.includes("/login")) {
-        window.location.href = "/login";
+      const { pathname } = window.location;
+      if (keepsPageOnSessionEnd(pathname)) {
+        // a stand-alone tool (/pdf) holds unsaved work in memory: it stays, and AuthContext drops the user
+        window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+      } else if (!pathname.includes("/login")) {
+        window.location.href = loginPathFor(pathname);
       }
     }
 

@@ -7,7 +7,8 @@ import noUntranslated from './eslint-rules/no-untranslated.js'
 import { BILINGUAL_FILES } from './i18n.files.mjs'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // public/pdfjs: third-party runtime assets of pdf.js copied from node_modules by pdfjs-assets.mjs.
+  globalIgnores(['dist', 'public/pdfjs']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

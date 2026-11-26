@@ -28,7 +28,8 @@ function extractCreateTable(name) {
 }
 
 const memoryDb = new Database(":memory:");
-["users", "networks", "content_id_labels", "user_content_id_labels", "content_id_claim_events"].forEach((name) => memoryDb.exec(extractCreateTable(name)));
+["users", "networks", "content_id_labels", "user_content_id_labels", "content_id_claim_events",
+  "ownership_channels", "ownership_channel_owners", "ownership_api_keys"].forEach((name) => memoryDb.exec(extractCreateTable(name)));
 (databaseSource.match(/ALTER TABLE networks ADD COLUMN [^"]+/g) || []).forEach((sql) => {
   try { memoryDb.exec(sql); } catch { /* column already part of CREATE TABLE */ }
 });
@@ -217,6 +218,43 @@ const fakeAxios = {
       const page = cms.explorePages[params.pageToken || ""] || { items: [] };
       return ok(page);
     }
+    if (method === "GET" && p === "/ownershipHistory" && params.assetId === "AS2") {
+      return ok({ items: [
+        { origination: { owner: "UPLOAD_OWNER" }, ownership: { general: [{ territories: ["US"] }] } },
+        { origination: { owner: "FORMER_OWNER" }, ownership: { general: [] } }
+      ] });
+    }
+    if (method === "GET" && p === "/contentOwners/UPLOAD_OWNER") {
+      return ok({ id: "UPLOAD_OWNER", displayName: "Upload owner", conflictNotificationEmail: "ownership@example.com" });
+    }
+    if (method === "GET" && p === "/contentOwners" && params.id) {
+      const owner = { id: "UPLOAD_OWNER", displayName: "Upload owner", conflictNotificationEmail: "ownership@example.com" };
+      return ok({ items: params.id.split(",").includes(owner.id) ? [owner] : [] });
+    }
+    if (method === "GET" && p === "/contentOwners/OTHER_OWNER") throw httpError(404, "Owner unavailable", "notFound");
+    if (method === "GET" && p === "/assetSearch" && params.metadataSearchFields === "artist:Thanh Nhuong") {
+      if (params.ownershipRestriction === "MINE") {
+        if (params.pageToken === "more-owned") return ok({ items: [{ id: "AS2" }] });
+        return ok({ items: [{ id: "AS1" }], nextPageToken: "more-owned" });
+      }
+      if (params.pageToken === "second-page") return ok({ items: [{ id: "AS3", title: "Second asset" }], pageInfo: { totalResults: 2 } });
+      return ok({
+        items: [{ id: "AS2", title: "Merged asset", isrc: "ISRC1", isrcs: ["ISRC1", "ISRC2"] }],
+        pageInfo: { totalResults: 2 },
+        nextPageToken: "second-page"
+      });
+    }
+    if (method === "GET" && p === "/assets/AS2") {
+      return ok({
+        id: "AS2",
+        metadataEffective: { title: "Merged asset", artist: ["Artist A", "Artist B"] },
+        ownership: { general: [{ owner: "FORMER_OWNER", territories: ["US"] }] },
+        ownershipEffective: {
+          general: [{ owner: "UPLOAD_OWNER", territories: ["US", "VN"] }, { owner: "FORMER_OWNER", territories: [] }],
+          performance: [{ owner: "UPLOAD_OWNER", territories: ["VN"] }]
+        }
+      });
+    }
     // The claims resource (claims.list / claims.get) has no snippet-only fields.
     const asResource = ({ videoTitle, thirdPartyClaim, videoViews, engagedViews, ...rest }) => rest;
     if (method === "GET" && p === "/claims") {
@@ -346,6 +384,7 @@ Module._load = function loadWithClaimFakes(request, parent, isMain) {
   return originalLoad(request, parent, isMain);
 };
 const service = require("../src/services/claimManagerService");
+const assetCheck = require("../src/services/assetCheckService");
 const controller = require("../src/controllers/claimManagerController");
 Module._load = originalLoad;
 
@@ -368,6 +407,120 @@ async function call(handler, req = {}) {
   await handler({ params: {}, query: {}, body: {}, user: ADMIN, ...req }, res);
   return res;
 }
+
+test("ownership email keeps same-title candidates separate from the channel manager and match claims", async (t) => {
+  const delivery = require("../src/services/assetDeliveryService");
+  const videoId = "abcdefghijk";
+  const channelId = "UC" + "a".repeat(22);
+  const seen = [];
+  let referenceAvailable = false;
+  t.mock.method(delivery, "partnerRequest", async (_ctx, method, path, { params }) => {
+    assert.equal(method, "GET");
+    seen.push(path);
+    if (path.endsWith("/channels")) return { data: { items: [{ id: channelId, snippet: { title: "Channel" },
+      contentDetails: { relatedPlaylists: { uploads: "uploads" } }, contentOwnerDetails: {} }] } };
+    if (path.endsWith("/playlistItems")) {
+      assert.equal(params.pageToken, "older");
+      return { data: { items: [{ contentDetails: { videoId } }], nextPageToken: "more" } };
+    }
+    if (path.endsWith("/videos")) return { data: { items: [{ id: videoId, snippet: { channelId, title: "Video: title!" } }] } };
+    if (path === "/claimSearch") return { data: { items: [
+      { videoId, assetId: "song", isPartnerUploaded: true, origin: { source: "audioMatch" }, status: "active" },
+      { videoId, assetId: "former", origin: "cmsUpload", status: "inactive" }
+    ] } };
+    if (path === "/assetSearch") return { data: { items: [{ id: "good", title: "Video title" }, { id: "other", title: "Video title remix" }] } };
+    if (path === "/assets/good") return { data: { id: "good", metadataEffective: { title: "Video title" },
+      ownershipEffective: { general: [{ owner: "assetOwner", territories: ["VN"] }] } } };
+    if (path === "/references") {
+      if (!referenceAvailable) throw Object.assign(new Error("private"), { status: 403 });
+      return { data: params.pageToken ? { items: [{ videoId }] } : { nextPageToken: "more-references" } };
+    }
+    if (path === "/contentOwners/assetOwner") return { data: { displayName: "Asset owner", conflictNotificationEmail: "rights@example.com" } };
+    throw new Error("Unexpected path " + path);
+  });
+  const res = await call(controller.checkOwnershipEmail, { query: { network_id: 7, id: channelId, page_token: "older" } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.channel.manager, null);
+  assert.equal(res.body.next_page_token, "more");
+  assert.deepEqual(res.body.owners.map((owner) => [owner.cms_name, owner.email, owner.evidence]), [
+    ["Asset owner", "rights@example.com", "title"]
+  ]);
+  assert.equal(res.body.channel_owner_count, 1);
+  assert.deepEqual(res.body.videos[0].assets.map((a) => [a.id, a.evidence, a.owners[0].email]), [["good", "title", "rights@example.com"]]);
+  assert.deepEqual(res.body.videos[0].warnings, []);
+  assert.ok(!seen.some((url) => url.includes("former") || url.includes("song")));
+  const { findChannelContact } = require("../src/services/ownershipDirectory");
+  assert.equal(findChannelContact(channelId, "Asset owner"), null);
+  referenceAvailable = true;
+  const verified = await call(controller.checkOwnershipEmail, { query: { network_id: 7, id: videoId } });
+  assert.equal(verified.body.videos[0].assets[0].evidence, "reference_video");
+  assert.equal(verified.body.channel_owner_count, 1);
+  assert.equal(verified.body.owners[0].evidence, "reference_video");
+  assert.equal(findChannelContact(channelId, "Asset owner").email, "rights@example.com");
+  assert.equal(verified.body.channel.manager, null);
+});
+
+test("ownership email attributes a visible manager and an active upload to their respective owners", async (t) => {
+  const delivery = require("../src/services/assetDeliveryService");
+  const id = "01234567890";
+  const channelId = "UC" + "b".repeat(22);
+  t.mock.method(delivery, "partnerRequest", async (_ctx, _method, path, { params }) => {
+    if (path.endsWith("/videos")) return { data: { items: [{ id, snippet: { channelId, title: "Video" } }] } };
+    if (path.endsWith("/channels")) return { data: { items: [{ id: channelId, contentOwnerDetails: { contentOwner: "manager" } }] } };
+    if (path === "/contentOwners/manager") return { data: { displayName: "Channel network" } };
+    if (path === "/claimSearch") {
+      assert.equal(params.includeThirdPartyClaims, true);
+      assert.equal(params.status, "ACTIVE");
+      return { data: { items: [{ videoId: id, assetId: "upload", origin: "cmsUpload", status: "active" }] } };
+    }
+    if (path === "/assets/upload") return { data: { id: "upload", ownershipEffective: {
+      general: [{ owner: "uploader", territories: ["US"] }] } } };
+    if (path === "/contentOwners/uploader") return { data: { displayName: "Asset owner", conflictNotificationEmail: "upload@example.com" } };
+    throw new Error("Unexpected path " + path);
+  });
+  const res = await call(controller.checkOwnershipEmail, { query: { network_id: 7, id } });
+  assert.equal(res.body.channel.manager.name, "Channel network");
+  assert.equal(res.body.channel_owner_count, 2);
+  assert.equal(res.body.channel.manager.email, null);
+  assert.equal(res.body.videos[0].assets[0].evidence, "upload_claim");
+  assert.equal(res.body.videos[0].assets[0].owners[0].email, "upload@example.com");
+  assert.deepEqual(res.body.videos[0].warnings, []);
+  const invalid = await call(controller.checkOwnershipEmail, { query: { network_id: 7, id: "bad" } });
+  assert.equal(invalid.statusCode, 400);
+});
+
+test("public channel scan checks linked uploads first, propagates nested token errors and reuses verified ownership", async (t) => {
+  const delivery = require("../src/services/assetDeliveryService");
+  const { lookupOwnershipEmail } = require("../src/services/ownershipEmailService");
+  const { findChannelContact } = require("../src/services/ownershipDirectory");
+  const id = "UC" + "q".repeat(22);
+  const linked = "01234567890";
+  const other = "abcdefghijk";
+  const calls = [];
+  let rejectContact = true;
+  t.mock.method(delivery, "partnerRequest", async (_ctx, _method, path) => {
+    calls.push(path);
+    if (path.endsWith("/channels")) return { data: { items: [{ id, contentDetails: { relatedPlaylists: { uploads: "uploads" } } }] } };
+    if (path.endsWith("/playlistItems")) return { data: { items: [other, linked].map((videoId) => ({ contentDetails: { videoId } })) } };
+    if (path.endsWith("/videos")) return { data: { items: [other, linked].map((videoId) => ({ id: videoId, snippet: { title: "Video", channelId: id } })) } };
+    if (path === "/claimSearch") return { data: { items: [{ videoId: linked, assetId: "upload", origin: "cmsUpload", status: "active" }] } };
+    if (path === "/assets/upload") return { data: { id: "upload", ownershipEffective: { general: [{ owner: "owner", territories: ["VN"] }] } } };
+    if (path === "/contentOwners/owner") {
+      if (rejectContact) throw Object.assign(new Error("CMS token rejected"), { cmsAuthFailed: true });
+      return { data: { displayName: "Requested CMS", conflictNotificationEmail: "rights@example.org" } };
+    }
+    throw new Error("Unexpected " + path);
+  });
+  const run = () => lookupOwnershipEmail({ networkId: 7, id, scan: {
+    signal: new AbortController().signal, contacts: new Map(), assets: new Map(), target: "requested cms"
+  } });
+  await assert.rejects(run(), { cmsAuthFailed: true });
+  rejectContact = false;
+  const result = await run();
+  assert.deepEqual(result.videos.map((video) => video.id), [linked]);
+  assert.equal(findChannelContact(id, "requested cms").email, "rights@example.org");
+  assert.ok(!calls.includes("/assetSearch"));
+});
 
 function eventRows(where = "1 = 1", ...params) {
   return memoryDb.prepare(`SELECT * FROM content_id_claim_events WHERE ${where} ORDER BY id`).all(...params);
@@ -663,6 +816,202 @@ test("a limited Claim Manager only sees claims whose asset carries one of their 
   assert.deepEqual(result.claims.map((claim) => claim.claim_id).sort(), ["C-disputed", "C-inactive", "C-ok"], "C-other (label Other) is hidden");
   assert.equal(result.totals.releasable, 1);
   assert.deepEqual(result.videos.map((video) => video.claim_count), [2, 1]);
+});
+
+test("third-party upload lookup reads ownership email only for uploads and enforces the CMS label before reading contacts", async () => {
+  const videoId = "BBBBBBBBBBB";
+  const existing = cms.snippets.find((claim) => claim.id === "C-disputed");
+  existing.thirdPartyClaim = false;
+  cms.snippets.push({ id: "C-third-party-match", videoId, assetId: "AS1", thirdPartyClaim: true, isPartnerUploaded: false });
+
+  const result = await service.getThirdPartyUploads({ user: LIMITED, videoId, networkIds: [7] });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.claims.map((claim) => claim.claim_id), ["C-other"]);
+  assert.equal(result.claims[0].asset_title, "Merged asset");
+  assert.deepEqual(result.claims[0].artists, ["Artist A", "Artist B"]);
+  assert.equal(result.claims[0].ownership_source, "effective");
+  assert.deepEqual(result.claims[0].contacts, [{ owner_id: "UPLOAD_OWNER", name: "Upload owner", email: "ownership@example.com" }]);
+  assert.equal(callsTo("GET", /\/assets\/AS2$/)[0].params.fetchOwnership, "effective");
+  assert.equal(callsTo("GET", /\/ownershipHistory$/).length, 0);
+
+  calls.length = 0;
+  existing.thirdPartyClaim = true;
+  const denied = await service.getThirdPartyUploads({ user: LIMITED, videoId, networkIds: [7] });
+  assert.deepEqual(denied.claims, []);
+  assert.match(denied.errors[0].message, /allowed labels/);
+  assert.equal(callsTo("GET", /\/assets\/AS2$/).length, 0);
+  assert.equal(callsTo("GET", /\/ownershipHistory$/).length, 0);
+  assert.equal(callsTo("GET", /\/contentOwners\//).length, 0);
+});
+
+test("third-party upload keeps worldwide owners when the CMS exposes only submitted ownership", async (t) => {
+  const delivery = require("../src/services/assetDeliveryService");
+  const request = delivery.partnerRequest;
+  const videoId = "BBBBBBBBBBB";
+  let effective;
+  const lookedUp = [];
+  t.mock.method(delivery, "partnerRequest", async (ctx, method, path, options) => {
+    if (path === "/assets/AS2") return { data: { id: "AS2", metadataEffective: { title: "Upload asset" }, ownershipEffective: effective } };
+    if (path === "/ownershipHistory") return { data: { items: [
+      { origination: { owner: "SUBMITTER" }, ownership: { general: [{ owner: "UPLOAD_OWNER", type: "exclude", ratio: 100 }] } },
+      { origination: { owner: "UPLOAD_OWNER" }, ownership: { performance: [{ type: "exclude", territories: ["US"] }] } },
+      { origination: { owner: "FORMER" }, ownership: { general: [{ type: "include", territories: [] }, { type: "exclude", ratio: 0 }] } }
+    ] } };
+    if (path.startsWith("/contentOwners/")) lookedUp.push(path);
+    return request(ctx, method, path, options);
+  });
+  const lookup = () => service.getThirdPartyUploads({ user: ADMIN, videoId, networkIds: [7] });
+  const submitted = await lookup();
+  assert.deepEqual(submitted.errors, []);
+  assert.equal(submitted.claims[0].ownership_source, "submitted");
+  assert.deepEqual(submitted.claims[0].contacts.map((owner) => owner.email), ["ownership@example.com"]);
+  effective = { general: [{ owner: "UPLOAD_OWNER", type: "exclude", territories: [], ratio: 100 }] };
+  const current = await lookup();
+  assert.equal(current.claims[0].ownership_source, "effective");
+  assert.deepEqual(current.claims[0].contacts, submitted.claims[0].contacts);
+  effective = { general: [] };
+  assert.deepEqual((await lookup()).claims[0].contacts, []);
+  assert.deepEqual(lookedUp, ["/contentOwners/UPLOAD_OWNER", "/contentOwners/UPLOAD_OWNER"]);
+});
+
+test("artist asset check uses the All assets restriction and preserves Google's pagination", async () => {
+  const query = { networkId: 7, artist: " Thanh Nhuong ", scope: "all" };
+  const first = await assetCheck.searchArtistAssets(query);
+  assert.deepEqual(first.items[0].isrcs, ["ISRC1", "ISRC2"]);
+  assert.equal(first.total, 2);
+  const second = await assetCheck.searchArtistAssets({ ...query, pageToken: first.next_page_token });
+  assert.deepEqual(second.items.map((item) => item.id), ["AS3"]);
+  assert.equal(second.next_page_token, null);
+  const searches = callsTo("GET", /\/assetSearch$/);
+  assert.deepEqual(searches.map((call) => call.params.ownershipRestriction), ["NONE", "NONE"]);
+  assert.equal(searches[1].params.pageToken, "second-page");
+});
+
+test("artist asset check shows effective owners only and loads each contact once", async () => {
+  const detail = await assetCheck.getAssetOwnership({ networkId: 7, assetId: "AS2" });
+  assert.deepEqual(detail.asset.artists, ["Artist A", "Artist B"]);
+  assert.deepEqual(detail.owners, [{
+    owner_id: "UPLOAD_OWNER", name: "Upload owner", email: "ownership@example.com",
+    rights: [{ type: "general", territories: ["US", "VN"] }, { type: "performance", territories: ["VN"] }]
+  }]);
+  assert.equal(callsTo("GET", /\/contentOwners\//).length, 1);
+  assert.equal(callsTo("GET", /\/assets\/AS2$/)[0].params.fetchOwnership, "effective");
+});
+
+test("external scope excludes later owned pages and preserves the unrestricted cursor and type filter", async () => {
+  const query = { networkId: 7, artist: "Thanh Nhuong", scope: "external", type: "sound_recording" };
+  const first = await assetCheck.searchArtistAssets(query);
+  assert.deepEqual(first.items, []);
+  assert.equal(first.total, null);
+  assert.equal(first.next_page_token, "second-page");
+  const second = await assetCheck.searchArtistAssets({ ...query, pageToken: first.next_page_token });
+  assert.deepEqual(second.items.map((item) => item.id), ["AS3"]);
+  assert.equal(second.next_page_token, null);
+  const searches = callsTo("GET", /\/assetSearch$/);
+  assert.deepEqual(searches.map((call) => call.params.ownershipRestriction), ["NONE", "MINE", "MINE", "NONE", "MINE", "MINE"]);
+  assert.ok(searches.every((call) => call.params.type === "sound_recording" && call.params.onBehalfOfContentOwner === "OWNER_7"));
+  const owned = await assetCheck.searchArtistAssets({ ...query, scope: "owned" });
+  assert.deepEqual(owned.items.map((item) => item.id), ["AS1"]);
+  await assert.rejects(assetCheck.searchArtistAssets({ ...query, type: "unsupported" }), /valid asset type/);
+});
+
+test("Excel export keeps the selection, merged ISRCs, distinct owners and assets missing from CMS", async () => {
+  const { Workbook } = require("exceljs");
+  const { buildAssetCheckWorkbook } = require("../src/services/assetCheckWorkbook");
+  cms.assets.get("AS2").ownershipEffective = { general: [
+    { owner: "UPLOAD_OWNER", territories: ["VN", "US"] },
+    { owner: "OTHER_OWNER", territories: ["GB"] }
+  ] };
+  const items = [{ id: "AS2", isrcs: ["0012", "0043"] }, { id: "AS2", isrcs: ["0012", "0043"] }, { id: "AS3", title: "Missing asset" }];
+  const selected = await assetCheck.loadSelectedAssets({ networkId: 7, items });
+  assert.deepEqual(callsTo("GET", /\/contentOwners$/).map((call) => call.params.id.split(",").sort()), [["OTHER_OWNER", "UPLOAD_OWNER"]]);
+  assert.deepEqual(callsTo("GET", /\/contentOwners\//).map((call) => call.url.split("/").pop()), ["OTHER_OWNER"]);
+  assert.deepEqual(callsTo("GET", /\/assets$/).map((call) => call.params.id), ["AS2,AS3"]);
+  const book = new Workbook();
+  await book.xlsx.load(await buildAssetCheckWorkbook(selected, "vi"));
+  const sheet = book.getWorksheet("Assets");
+  assert.deepEqual(sheet.getColumn(1).values.slice(1), ["Asset ID", "AS2", "AS2", "AS3"]);
+  assert.equal(sheet.getCell("E2").value, "ownership@example.com");
+  assert.equal(sheet.getCell("F3").value, "OTHER_OWNER");
+  assert.equal(sheet.getCell("G2").value, "general: VN, US");
+  assert.equal(sheet.getCell("H2").value, "0012, 0043");
+  assert.equal(sheet.getCell("B4").value, "Missing asset");
+  assert.equal(sheet.getCell("P4").value, "CMS không trả về chi tiết asset.");
+  await assert.rejects(assetCheck.loadSelectedAssets({ networkId: 7, items: [] }), /Select at least one asset/);
+});
+
+test("all-matching export follows all cursors, applies exclusions and keeps the selected CMS scope and type", async () => {
+  const filter = { artist: "Thanh Nhuong", scope: "all", type: "sound_recording" };
+  async function ids(scope, excludedIds = []) {
+    const assets = await Array.fromAsync(assetCheck.iterateExportAssets({ networkId: 7, filter: { ...filter, scope }, excludedIds }));
+    return assets.map((item) => item.id);
+  }
+  assert.deepEqual(await ids("all", ["AS2"]), ["AS3"]);
+  assert.deepEqual(await ids("external"), ["AS3"]);
+  assert.deepEqual(await ids("owned"), ["AS1", "AS2"]);
+  assert.ok(callsTo("GET", /\/assetSearch$/).every((call) => call.params.type === "sound_recording"));
+  await assert.rejects(ids("all", ["AS2", "AS3"]), /Select at least one asset/);
+});
+
+test("asset export streams counted progress and a complete workbook, while keeping binary downloads compatible", async (t) => {
+  const express = require("express");
+  const { Workbook } = require("exceljs");
+  const { readAssetExport } = await import("../../frontend/src/api/readAssetExport.js");
+  const app = express();
+  app.use(express.json());
+  app.post("/export/:networkId", controller.exportSelectedAssets);
+  const server = app.listen(0, "127.0.0.1");
+  await require("node:events").once(server, "listening");
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/export/7`;
+  const filter = { artist: "Thanh Nhuong", scope: "all", type: "" };
+  async function post(accept, body) {
+    return fetch(url, { method: "POST", headers: { accept, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  }
+  const response = await post("application/x-ndjson", { filter });
+  const progress = [];
+  const { blob, written } = await readAssetExport(response.body, (event) => progress.push(event));
+  assert.equal(written, 2);
+  assert.equal(progress[0].written, 0);
+  assert.deepEqual(progress.at(-1), { type: "progress", written: 2, finalizing: true });
+  const book = new Workbook();
+  await book.xlsx.load(await blob.arrayBuffer());
+  assert.deepEqual(book.worksheets[0].getColumn(1).values.slice(2), ["AS2", "AS3"]);
+  const binary = await post("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", { filter, excluded_ids: ["AS3"] });
+  await book.xlsx.load(await binary.arrayBuffer());
+  assert.deepEqual(book.worksheets[0].getColumn(1).values.slice(2), ["AS2"]);
+
+  const invalid = await post("application/x-ndjson", { items: [] });
+  await assert.rejects(readAssetExport(invalid.body), /Select at least one asset/);
+  const partial = new Response('{"type":"xlsx","data":"UEs="}\n');
+  await assert.rejects(readAssetExport(partial.body), /interrupted/);
+});
+
+test("asset export cancellation stops the in-flight detail batches before another batch starts", async (t) => {
+  const delivery = require("../src/services/assetDeliveryService");
+  const controller = new AbortController();
+  let active = 0;
+  let started = 0;
+  t.mock.method(delivery, "partnerRequest", async (ctx, method, path, { params }) => {
+    assert.equal(path, "/assets");
+    assert.ok(params.id.split(",").length <= 50);
+    started++;
+    active++;
+    try {
+      await require("node:timers/promises").setTimeout(1000, undefined, { signal: ctx.signal });
+      assert.fail("The cancelled batch should not finish");
+    } finally {
+      active--;
+    }
+  });
+  const items = Array.from({ length: 500 }, (_, index) => ({ id: `AS${index}` }));
+  const pending = assetCheck.loadSelectedAssets({ networkId: 7, items, signal: controller.signal });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(active, 5);
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(started, 5);
+  assert.equal(active, 0);
 });
 
 test("a CMS whose token cannot be refreshed is reported per network while the others are searched", async () => {
@@ -1213,23 +1562,23 @@ test("the controller answers accounts, validation errors and searches", async ()
   assert.deepEqual(logged, []);
 });
 
-test("a token Google rejects mid-search is reported as a credentials error and flags the CMS", async () => {
+test("a resource 401 after refresh reports a credentials error without disconnecting the CMS", async () => {
   cms.authFail = true;
   const res = await call(controller.search, { body: { network_ids: [7], mode: "videos", videos: "AAAAAAAAAAA" } });
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.errors.length, 1);
   assert.equal(res.body.errors[0].scope, "credentials");
-  assert.match(res.body.errors[0].message, /^CMS authorization failed: Invalid Credentials\. Re-authorize/);
+  assert.equal(res.body.errors[0].message, "CMS authorization failed: Invalid Credentials.");
   assert.deepEqual(res.body.videos[0].errors.map((error) => error.network_id), [7]);
-  assert.equal(authStatus(7), "error");
+  assert.equal(authStatus(7), "connected");
 });
 
-test("the controller maps a rejected CMS token to 424 and flags the network", async () => {
+test("the controller maps a repeated Google API 401 to 424 and leaves the connection intact", async () => {
   cms.authFail = true;
   const unauthorized = await call(controller.getDetail, { params: { networkId: "7", claimId: "C-ok" } });
   assert.equal(unauthorized.statusCode, 424);
-  assert.match(unauthorized.body.message, /^CMS authorization failed: Invalid Credentials\. Re-authorize/);
-  assert.equal(authStatus(7), "error");
+  assert.equal(unauthorized.body.message, "CMS authorization failed: Invalid Credentials.");
+  assert.equal(authStatus(7), "connected");
   assert.ok(logged.some((line) => /^\[claim-manager\] 424 network=7 reason=authError: CMS authorization failed/.test(line)), "the answer is logged with the network id");
 });
 
@@ -1404,10 +1753,11 @@ test("a token service that does not answer is a transient error: the CMS is not 
     cms.refreshFailure = "invalid_client";
     const misconfigured = await call(controller.getDetail, { params: { networkId: "11", claimId: "C-ok" } });
     assert.equal(misconfigured.statusCode, 500);
-    assert.match(misconfigured.body.message, /^Google rejected this application's OAuth client while refreshing the CMS token \(invalid_client: The OAuth client was not found\)\. An administrator must check GOOGLE_CLIENT_ID \/ GOOGLE_CLIENT_SECRET on the server; re-authorizing the CMS will not help\.$/);
+    assert.match(misconfigured.body.message, /^Google rejected the CMS token refresh \(invalid_client: The OAuth client was not found\).*retry the saved grant\.$/);
     assert.equal(misconfigured.body.reason, "invalid_client");
+    assert.equal(misconfigured.body.recovery, "restore_oauth_client");
     assert.equal(authStatus(11), "connected", "re-authorizing could not fix a rejected client");
-    assert.ok(logged.some((line) => line.startsWith("[claim-manager] 500 network=11 reason=invalid_client: Google rejected this application's OAuth client")));
+    assert.ok(logged.some((line) => line.startsWith("[claim-manager] 500 network=11 reason=invalid_client: Google rejected the CMS token refresh")));
     const clientSearch = await service.searchClaims({ user: ADMIN, body: { network_ids: [7, 11], mode: "videos", videos: ["AAAAAAAAAAA"] } });
     assert.deepEqual([clientSearch.errors[0].network_id, clientSearch.errors[0].scope], [11, "search"]);
     assert.match(clientSearch.errors[0].message, /OAuth client/);
@@ -1423,9 +1773,7 @@ test("a token service that does not answer is a transient error: the CMS is not 
   });
 });
 
-test("a CMS with an expired access token and no refresh token is flagged by the claim manager itself", async () => {
-  // getAccessToken() only flags the network when Google refuses the refresh; with no refresh token
-  // to send it just throws, so here the claim manager's own tagging is load-bearing.
+test("an expired CMS grant without a refresh token is marked as requiring authorization", async () => {
   await withNetwork(10, { name: "Stale CMS", accessToken: "token-10", refreshToken: null, expiry: expired() }, async () => {
     const res = await call(controller.getDetail, { params: { networkId: "10", claimId: "C-ok" } });
     assert.equal(res.statusCode, 424);
@@ -1471,12 +1819,12 @@ test("a failed claim pre-read sends nothing: the claims come back failed and ret
   cms.authFail = true;
   const rejected = await service.releaseClaims({ user: ADMIN, releases: [{ network_id: 7, claim_id: "C-ok" }] });
   assert.equal(rejected.results[0].outcome, "skipped");
-  assert.match(rejected.results[0].message, /^CMS authorization failed: Invalid Credentials\. Re-authorize this CMS in Settings > Network\.$/);
+  assert.equal(rejected.results[0].message, "CMS authorization failed: Invalid Credentials.");
   assert.equal(callsTo("PATCH", /\/claims\//).length, 0);
-  assert.equal(authStatus(7), "error");
+  assert.equal(authStatus(7), "connected");
 });
 
-test("a token Google rejects on a release PATCH flags the CMS and stops the rest of its batch", async () => {
+test("a release PATCH still rejected after refresh stops the batch and preserves the CMS connection", async () => {
   cms.claims.set("C-auth", { ...cms.claims.get("C-later"), id: "C-auth" });
   cms.patchBehaviour = { "C-auth": "auth" };
   cms.patchDelayMs = 30;
@@ -1485,14 +1833,14 @@ test("a token Google rejects on a release PATCH flags the CMS and stops the rest
   assert.equal(byId["C-auth"].outcome, "failed");
   assert.equal(byId["C-auth"].reason, "authError");
   assert.equal(byId["C-auth"].retryable, false);
-  assert.match(byId["C-auth"].message, /^CMS authorization failed: Invalid Credentials\. Re-authorize this CMS in Settings > Network\.$/);
+  assert.equal(byId["C-auth"].message, "CMS authorization failed: Invalid Credentials.");
   assert.equal(byId["C-ok"].outcome, "released", "the claim in flight on another video finishes");
   ["C-later", "C-timeout", "C-refused"].forEach((id) => {
-    assert.equal(byId[id].outcome, "skipped", `${id} (queued behind C-auth on the same video) is not sent once the token is known to be dead`);
-    assert.match(byId[id].message, /^CMS authorization failed: Invalid Credentials.*Re-authorize/);
+    assert.equal(byId[id].outcome, "skipped", `${id} (queued behind C-auth on the same video) is not sent after the 401 retry fails`);
+    assert.equal(byId[id].message, "CMS authorization failed: Invalid Credentials.");
   });
-  assert.deepEqual(callsTo("PATCH", /\/claims\//).map((item) => item.url.split("/").pop()).sort(), ["C-auth", "C-ok"]);
-  assert.equal(authStatus(7), "error");
+  assert.deepEqual(callsTo("PATCH", /\/claims\//).map((item) => item.url.split("/").pop()).sort(), ["C-auth", "C-auth", "C-ok"]);
+  assert.equal(authStatus(7), "connected");
   assert.deepEqual(eventRows("operation_id = ?", result.operation_id).map((row) => row.result).sort(), ["failed", "released", "skipped", "skipped", "skipped"]);
 });
 

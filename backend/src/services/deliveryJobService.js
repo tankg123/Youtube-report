@@ -133,7 +133,7 @@ async function uploadStoredReference(ctx, product, track, log, reference = {}) {
     });
     return { ok: true, reference: normalized };
   } catch (error) {
-    store.markReferenceError(track.id, error, product.network_id);
+    store.markReferenceError(track.id, error);
     log("reference_upload", "failed", store.errorMessage(error), { step: "reference", duration_ms: Date.now() - started });
     return { ok: false, message: store.errorMessage(error) };
   } finally {
@@ -158,7 +158,7 @@ async function processTrack(ctx, product, track, { includeReference, log, refere
   try {
     plan = store.buildTrackPlan(product, track, ctx.contentOwnerId);
   } catch (error) {
-    store.markTrackError(track.id, "metadata", error, product.network_id);
+    store.markTrackError(track.id, "metadata", error);
     return { ...base, step: "metadata", error_message: store.errorMessage(error) };
   }
 
@@ -187,7 +187,7 @@ async function processTrack(ctx, product, track, { includeReference, log, refere
         }
       });
     } catch (error) {
-      store.markTrackError(track.id, "insert", error, product.network_id);
+      store.markTrackError(track.id, "insert", error);
       return { ...base, step: "insert", error_message: store.errorMessage(error) };
     }
     status = store.updateTrackAfterRun(track.id, plan, product, result);
@@ -240,7 +240,7 @@ async function runTrack(ctx, product, track, { includeReference, actor, runId, r
   try {
     result = await processTrack(observedContext(ctx, log, "track"), product, track, { includeReference, log, reference });
   } catch (error) {
-    store.markTrackError(track.id, "deliver", error, product.network_id);
+    store.markTrackError(track.id, "deliver", error);
     result = { track_id: track.id, status: "error", step: "deliver", error_message: store.errorMessage(error),
       asset_id: store.cleanText(store.getTrackRow(track.id)?.asset_id), asset_created: false, reference: null };
   }
@@ -274,7 +274,7 @@ async function runJob({ productId, trackIds, forceDuplicates, includeReference, 
     const message = store.errorMessage(error);
     log("delivery_step", "failed", message, { step: "auth", duration_ms: Date.now() - authStarted });
     tracks.forEach((track) => {
-      store.markTrackError(track.id, "auth", error, productRow.network_id);
+      store.markTrackError(track.id, "auth", error);
       results.set(track.id, { track_id: track.id, status: "error", step: "auth", asset_id: store.cleanText(track.asset_id), error_message: message, duplicates: [] });
       eventLogger(productId, runId, actor, track.id)("track_delivery", "failed", message, { step: "auth" });
     });
@@ -313,7 +313,7 @@ async function runJob({ productId, trackIds, forceDuplicates, includeReference, 
         });
         log("delivery_step", "failed", store.errorMessage(wrapped), { step: "check", duration_ms: Date.now() - checkStarted });
         candidates.forEach((track) => {
-          store.markTrackError(track.id, "check", wrapped, productRow.network_id);
+          store.markTrackError(track.id, "check", wrapped);
           results.set(track.id, { track_id: track.id, status: "error", step: "check", asset_id: "", error_message: store.errorMessage(wrapped), duplicates: [] });
           eventLogger(productId, runId, actor, track.id)("track_delivery", "failed", store.errorMessage(wrapped), { step: "check" });
         });

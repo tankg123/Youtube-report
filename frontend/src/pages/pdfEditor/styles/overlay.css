@@ -1,0 +1,714 @@
+/*
+ * PDF editor (/pdf): what the user adds to a page and how it is selected and changed
+ * (overlay/PageOverlay.jsx, ObjectView.jsx, OverlayFloats.jsx, OverlayLayer.jsx, PropertiesPanel.jsx).
+ * Every selector starts with .pdfx-root: this stylesheet stays in the document after the user leaves /pdf.
+ * Tokens (--pdfx-*) come from shell.css; the paper is always light, so everything ON a page uses fixed colours.
+ *
+ * STACKING. A highlight must be multiplied with the page under it (mix-blend-mode: multiply = the Multiply
+ * blend mode the export writes). A blend mode only reaches what is painted in the SAME stacking context, and
+ * the overlay slot of the viewer (.pdfx-page-overlay, z-index 3) would be one of its own. It is therefore
+ * given z-index: auto here, and the layers of a page become:
+ *     canvas, text layer (0)   <   link layer (2)   <   objects of this file (3)   <   their outlines and
+ *     handles (5)   <   whatever another feature puts into the slot (6: lifted below, so it stays on top)
+ * all inside the stacking context of the page itself (.pdfx-page has isolation: isolate).
+ */
+
+.pdfx-root .pdfx-page > .pdfx-page-overlay {
+  z-index: auto;
+}
+
+.pdfx-root .pdfx-page > .pdfx-page-overlay > :not(.pdfx-ov) {
+  z-index: 6;
+}
+
+.pdfx-root {
+  --pdfx-ov-accent: var(--ui-primary, #2563eb);
+  --pdfx-ov-danger: #dc2626;
+  --pdfx-rotate-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M21 3v5h-5' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8'/%3E%3Cpath d='M21 3v5h-5'/%3E%3C/svg%3E") 11 11, grab;
+}
+
+/* ---- the cursor over the pages (set by overlay/pointer.js from tools/interaction.js cursorFor) ----------------- */
+
+.pdfx-root .pdfx-viewer:not([data-pdfx-pointer="none"]) .pdfx-pages {
+  cursor: var(--pdfx-cursor, auto);
+}
+
+.pdfx-root[data-busy="true"] .pdfx-viewer .pdfx-pages {
+  cursor: progress;
+}
+
+/* drawing with a finger or a pen must not scroll the pages */
+.pdfx-root .pdfx-viewer[data-pdfx-pointer="overlay"] .pdfx-page {
+  touch-action: none;
+}
+
+/* ---- the layer of one page -------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-ov {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* objects: placed by a matrix from the top-left corner of the page */
+.pdfx-root .pdfx-page-overlay .pdfx-ov .pdfx-ov-object {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  display: block;
+  max-width: none;
+  overflow: visible;
+  transform-origin: 0 0;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* what is painted of a shape takes the pointer (the cursor), the box around it does not */
+.pdfx-root .pdfx-page-overlay .pdfx-ov svg.pdfx-ov-object > * {
+  pointer-events: visiblePainted;
+}
+
+.pdfx-root .pdfx-page-overlay .pdfx-ov img.pdfx-ov-picture {
+  pointer-events: auto;
+  -webkit-user-drag: none;
+}
+
+.pdfx-root .pdfx-page-overlay .pdfx-ov .pdfx-ov-object[data-preview] > *,
+.pdfx-root .pdfx-page-overlay .pdfx-ov .pdfx-ov-object[data-preview] {
+  pointer-events: none;
+}
+
+/* text boxes of text/TextBox.jsx and text/TextEditor.jsx: only their place in the stack is set here */
+.pdfx-root .pdfx-page-overlay .pdfx-textbox,
+.pdfx-root .pdfx-page-overlay .pdfx-text-editor {
+  z-index: 3;
+}
+
+.pdfx-root .pdfx-page-overlay .pdfx-text-editor {
+  pointer-events: auto;
+}
+
+.pdfx-root .pdfx-page-overlay .pdfx-text-caret-layer {
+  z-index: 5;
+}
+
+/* a text box that will be exported as a picture (text/codes.js TEXT_RASTERIZED) */
+.pdfx-root .pdfx-page-overlay .pdfx-textbox[data-rasterized="true"] {
+  outline: calc(1px * var(--pdfx-text-unit, 8)) dotted #d97706;
+  outline-offset: calc(2px * var(--pdfx-text-unit, 8));
+}
+
+/* the picture that follows the pointer while it is being placed */
+.pdfx-root .pdfx-ov-ghost {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ---- marks: pending redactions and blur areas ------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-page-overlay .pdfx-ov-mark {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* the frame of a mark lies over what the mark shows (the live mosaic of a blur area) */
+.pdfx-root .pdfx-page-overlay .pdfx-ov-mark::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 1.5px solid var(--pdfx-ov-danger);
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-page-overlay .pdfx-ov-mark[data-kind="redact"] {
+  background-image: repeating-linear-gradient(135deg, rgb(220 38 38 / 0.22) 0 2px, rgb(220 38 38 / 0.06) 2px 8px);
+}
+
+/* hovering or selecting a redaction shows the colour the export will paint */
+.pdfx-root .pdfx-page-overlay .pdfx-ov-mark[data-kind="redact"]:hover,
+.pdfx-root .pdfx-page-overlay .pdfx-ov-mark[data-kind="redact"][data-selected="true"] {
+  background-image: none;
+  background-color: var(--pdfx-mark-fill, #000000);
+}
+
+.pdfx-root .pdfx-page-overlay .pdfx-ov-mark[data-kind="blur"]::after {
+  border-style: dashed;
+}
+
+.pdfx-root .pdfx-page-overlay .pdfx-ov-mark[data-kind="blur"] {
+  /* until the mosaic is computed: a frosted pane over the page */
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+
+.pdfx-root .pdfx-ov-blur {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.pdfx-root .pdfx-ov-blur[data-ready="true"] {
+  opacity: 1;
+}
+
+.pdfx-root .pdfx-ov-mark-label {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  padding: 0 4px;
+  border-radius: 0 0 3px;
+  background: var(--pdfx-ov-danger);
+  color: #ffffff;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* the original line of a replaced text */
+.pdfx-root .pdfx-page-overlay .pdfx-ov-cover {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* ---- outlines, handles ---------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-page-overlay .pdfx-ov-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  display: block;
+  max-width: none;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pdfx-root .pdfx-ov-chrome path,
+.pdfx-root .pdfx-ov-chrome line,
+.pdfx-root .pdfx-ov-chrome rect {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.pdfx-root .pdfx-ov-outline {
+  stroke: var(--pdfx-ov-accent);
+  stroke-width: 1.25;
+}
+
+.pdfx-root .pdfx-ov-stem {
+  stroke: var(--pdfx-ov-accent);
+  stroke-width: 1;
+}
+
+.pdfx-root .pdfx-ov-rubber,
+.pdfx-root .pdfx-ov-hover-line {
+  stroke: var(--pdfx-ov-accent);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 3;
+}
+
+.pdfx-root .pdfx-ov-chrome .pdfx-ov-hover-line {
+  fill: rgba(var(--ui-accent-rgb, 37, 99, 235), 0.08);
+}
+
+.pdfx-root .pdfx-ov-chrome .pdfx-ov-marquee {
+  fill: rgba(var(--ui-accent-rgb, 37, 99, 235), 0.1);
+  stroke: var(--pdfx-ov-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.pdfx-root .pdfx-ov-erase {
+  stroke: var(--pdfx-ov-danger);
+  stroke-width: 2;
+}
+
+.pdfx-root .pdfx-ov-chrome .pdfx-ov-textmark {
+  fill: rgb(250 204 21 / 0.45);
+  stroke: none;
+}
+
+/* the letters a pending mark takes although they reach beyond it (a letter is removed as a whole) */
+.pdfx-root .pdfx-page-overlay .pdfx-ov-reach {
+  z-index: 4;
+}
+
+.pdfx-root .pdfx-ov-chrome .pdfx-ov-reach-box {
+  fill: rgb(220 38 38 / 0.14);
+  stroke: var(--pdfx-ov-danger);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+.pdfx-root .pdfx-ov-chrome .pdfx-ov-textmark[data-tool="redact"] {
+  fill: rgb(220 38 38 / 0.25);
+  stroke: var(--pdfx-ov-danger);
+  stroke-width: 1.5;
+}
+
+/* a handle: an 8 px square in a 16 px hit area */
+.pdfx-root .pdfx-page-overlay .pdfx-ov-handle {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.pdfx-root .pdfx-ov-handle::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--pdfx-ov-accent);
+  background: #ffffff;
+}
+
+.pdfx-root .pdfx-ov-handle-rotate {
+  cursor: var(--pdfx-rotate-cursor);
+}
+
+.pdfx-root .pdfx-ov-handle-rotate::after {
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+@media (pointer: coarse) {
+  .pdfx-root .pdfx-page-overlay .pdfx-ov-handle {
+    width: 28px;
+    height: 28px;
+    margin: -6px;
+  }
+
+  .pdfx-root .pdfx-ov-handle::after {
+    top: 8px;
+    left: 8px;
+    width: 12px;
+    height: 12px;
+  }
+}
+
+/* "in the file this object lies under an annotation of the page" */
+.pdfx-root .pdfx-page-overlay .pdfx-ov-notice {
+  position: absolute;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 2px;
+  border-radius: 50%;
+  background: #d97706;
+  color: #ffffff;
+  pointer-events: auto;
+  font-size: 12px;
+}
+
+/* ---- what floats over the pages: the selection bar, the text popover ----------------------------------------- */
+
+.pdfx-root .pdfx-selection-bar {
+  position: absolute;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pdfx-border);
+  border-radius: 10px;
+  background: var(--pdfx-surface);
+  box-shadow: var(--pdfx-shadow);
+  white-space: nowrap;
+}
+
+.pdfx-root .pdfx-selection-bar .pdfx-btn {
+  min-width: 32px;
+  height: 32px;
+}
+
+.pdfx-root .pdfx-text-popover {
+  transform: translate(-50%, -100%);
+}
+
+.pdfx-root[data-layout="narrow"] .pdfx-selection-bar .pdfx-btn {
+  min-width: 44px;
+  height: 44px;
+}
+
+.pdfx-root .pdfx-context-menu {
+  position: fixed;
+  width: 0;
+  height: 0;
+}
+
+.pdfx-root .pdfx-context-menu .pdfx-menu {
+  top: 0;
+}
+
+/* ---- properties panel ------------------------------------------------------------------------------------------- */
+
+.pdfx-root .pdfx-props {
+  display: flex;
+  flex-direction: column;
+}
+
+.pdfx-root .pdfx-prop-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-prop-heading {
+  color: var(--pdfx-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pdfx-root .pdfx-prop-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pdfx-root .pdfx-prop-caption {
+  flex: 0 0 76px;
+  padding-top: 7px;
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.pdfx-root .pdfx-prop-control {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-prop-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-prop-note {
+  color: var(--pdfx-text-2);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-prop-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--pdfx-info-soft);
+  color: var(--pdfx-text);
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-prop-alert > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--pdfx-info);
+}
+
+.pdfx-root .pdfx-prop-alert[data-tone="warning"] {
+  background: var(--pdfx-warning-soft);
+}
+
+.pdfx-root .pdfx-prop-alert[data-tone="warning"] > svg {
+  color: var(--pdfx-warning);
+}
+
+.pdfx-root .pdfx-prop-replaces {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-prop-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pdfx-root .pdfx-prop-final {
+  padding: 12px;
+}
+
+.pdfx-root .pdfx-props .pdfx-btn-text {
+  height: 32px;
+  font-weight: 600;
+}
+
+.pdfx-root .pdfx-props .pdfx-prop-delete {
+  color: var(--pdfx-danger);
+}
+
+.pdfx-root .pdfx-prop-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--pdfx-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-prop-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--pdfx-accent);
+}
+
+.pdfx-root .pdfx-prop-check input:focus-visible,
+.pdfx-root .pdfx-swatch:focus-visible,
+.pdfx-root .pdfx-number-steps button:focus-visible,
+.pdfx-root .pdfx-color-native:focus-visible,
+.pdfx-root .pdfx-percent-range:focus-visible,
+.pdfx-root .pdfx-ov-notice:focus-visible {
+  outline: 2px solid var(--pdfx-accent-ink);
+  outline-offset: 2px;
+}
+
+/* number field with steppers */
+.pdfx-root .pdfx-number {
+  display: inline-flex;
+  align-items: stretch;
+  height: 30px;
+}
+
+.pdfx-root .pdfx-number-input {
+  width: 58px;
+  border-radius: 6px 0 0 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdfx-root .pdfx-number-unit {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-left: 0;
+  background: var(--pdfx-surface-2);
+  color: var(--pdfx-text-2);
+  font-size: 11px;
+}
+
+.pdfx-root .pdfx-number-steps {
+  display: inline-flex;
+  flex-direction: column;
+  width: 18px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  overflow: hidden;
+}
+
+.pdfx-root .pdfx-number-steps button {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: var(--pdfx-surface-2);
+  color: var(--pdfx-text-2);
+  cursor: pointer;
+}
+
+.pdfx-root .pdfx-number-steps button:hover {
+  background: var(--pdfx-surface-3);
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-number-steps button:disabled {
+  color: var(--pdfx-text-3);
+  cursor: not-allowed;
+}
+
+.pdfx-root .pdfx-number-presets {
+  width: 22px;
+  margin-left: 4px;
+  padding: 0;
+  color: transparent;
+}
+
+.pdfx-root .pdfx-number-presets option {
+  color: var(--pdfx-text);
+}
+
+.pdfx-root .pdfx-select {
+  max-width: 100%;
+}
+
+/* colour control */
+.pdfx-root .pdfx-color {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pdfx-root .pdfx-swatch {
+  position: relative;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgb(15 23 42 / 0.28);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.theme-dark .pdfx-root .pdfx-swatch {
+  border-color: rgb(255 255 255 / 0.4);
+}
+
+.pdfx-root .pdfx-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--pdfx-surface), 0 0 0 4px var(--pdfx-accent-ink);
+}
+
+/* "no colour": a white disc with a red stroke through it */
+.pdfx-root .pdfx-swatch-none {
+  background: linear-gradient(135deg, #ffffff 0 44%, #dc2626 44% 56%, #ffffff 56% 100%);
+}
+
+.pdfx-root .pdfx-color-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdfx-root .pdfx-color-hex {
+  width: 84px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdfx-root .pdfx-color-native {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--pdfx-border-strong);
+  border-radius: 6px;
+  background: var(--pdfx-surface);
+  cursor: pointer;
+}
+
+/* toggle groups */
+.pdfx-root .pdfx-toggle-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.pdfx-root .pdfx-toggle-group .pdfx-btn {
+  min-width: 30px;
+  height: 30px;
+  border-color: var(--pdfx-border);
+}
+
+.pdfx-root .pdfx-toggle-group .pdfx-btn-text {
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.pdfx-root .pdfx-percent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pdfx-root .pdfx-percent-range {
+  width: 72px;
+  accent-color: var(--pdfx-accent);
+}
+
+/* pending marks */
+.pdfx-root .pdfx-marks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdfx-root .pdfx-mark-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 6px;
+  border-radius: 6px;
+}
+
+.pdfx-root .pdfx-mark-row[data-selected="true"] {
+  background: var(--pdfx-accent-soft);
+}
+
+.pdfx-root .pdfx-mark-row .pdfx-btn {
+  min-width: 28px;
+  height: 28px;
+}
+
+.pdfx-root .pdfx-mark-swatch {
+  flex: none;
+  width: 14px;
+  height: 10px;
+  border: 1px solid #dc2626;
+}
+
+.pdfx-root .pdfx-mark-swatch[data-kind="blur"] {
+  border-style: dashed;
+  background: repeating-conic-gradient(#94a3b8 0% 25%, #e2e8f0 0% 50%) 0 0 / 6px 6px;
+}
+
+.pdfx-root .pdfx-mark-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfx-root .pdfx-ov-blur {
+    transition: none;
+  }
+}

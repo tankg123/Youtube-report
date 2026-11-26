@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { setTimeout: waitForRetry } = require("node:timers/promises");
 const { getConnectedNetwork, getAccessToken, getGoogleError } = require("./googleContentIdService");
 const { customIdFor } = require("./productTrackImportService");
 
@@ -67,10 +68,6 @@ const CLAIM_SEARCH_MAX_PAGES = 10;
 // ---------------------------------------------------------------------------
 // Small pure helpers
 // ---------------------------------------------------------------------------
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function normalizeIsrc(value) {
   const code = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -545,9 +542,11 @@ function wrapError(error, fallbackMessage = "Google Content ID request failed", 
   const wrapped = new Error(googleMessage);
   wrapped.isAssetDeliveryError = true;
   wrapped.status = error?.status || error?.response?.status || undefined;
-  wrapped.reason = googleReason(error);
+  wrapped.reason = googleReason(error) || error?.reason || "";
   wrapped.googleMessage = googleMessage;
   wrapped.code = error?.code;
+  if (error?.cmsAuthFailed) wrapped.cmsAuthFailed = true;
+  if (error?.networkId) wrapped.networkId = error.networkId;
   if (isTimeoutError(error)) wrapped.timedOut = true;
   const retryAfter = Number(error?.response?.headers?.["retry-after"]);
   if (Number.isFinite(retryAfter) && retryAfter >= 0) wrapped.retryAfter = retryAfter;
@@ -558,7 +557,7 @@ async function authContext(networkId) {
   const network = getConnectedNetwork(networkId);
   const accessToken = await getAccessToken(network);
   const contentOwnerId = cleanText(network.network_code);
-  return { network, contentOwnerId, accessToken };
+  return { network, contentOwnerId, accessToken, tokenForRequest: (options) => getAccessToken(network, options) };
 }
 
 function isContext(value) {
@@ -588,7 +587,7 @@ function attemptTimeout(options, silentAttempts) {
 }
 
 // Options beyond the Axios pass-throughs:
-//   retry: false        — a single attempt, whatever the error.
+//   retry: false        — disables retries after transport errors or temporary HTTP failures.
 //   idempotent: boolean — whether a lost answer may be followed by a second identical call
 //                         (defaults to the HTTP method semantics, see IDEMPOTENT_METHODS).
 // A streamed body cannot be sent twice, so such a call always gets a single attempt.
@@ -597,8 +596,9 @@ async function request(ctx, method, path, options = {}) {
   const config = {
     method: String(method || "GET").toUpperCase(),
     url,
+    signal: ctx.signal,
     params: { onBehalfOfContentOwner: ctx.contentOwnerId, ...(options.params || {}) },
-    headers: { Authorization: `Bearer ${ctx.accessToken}`, ...(options.headers || {}) }
+    headers: options.headers || {}
   };
   if (options.data !== undefined) config.data = options.data;
   if (options.maxBodyLength !== undefined) config.maxBodyLength = options.maxBodyLength;
@@ -608,34 +608,49 @@ async function request(ctx, method, path, options = {}) {
 
   const idempotent = options.idempotent === undefined ? IDEMPOTENT_METHODS.has(config.method) : Boolean(options.idempotent);
   const replayable = !(options.data && typeof options.data.pipe === "function");
-  const attempts = options.retry === false || !replayable ? 1 : MAX_ATTEMPTS;
+  const maxRetries = options.retry === false || !replayable ? 0 : MAX_ATTEMPTS - 1;
   const endpoint = new URL(url).pathname;
   let lastError;
   let lastTimeout = attemptTimeout(options, 0);
   let made = 0;
   let timedOut = 0;
+  let retries = 0;
+  let rejectedAccessToken;
+  let refreshedAfterRejection = false;
 
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  while (true) {
+    ctx.signal?.throwIfAborted();
+    const accessToken = ctx.tokenForRequest ? await ctx.tokenForRequest({ rejectedAccessToken }) : ctx.accessToken;
+    rejectedAccessToken = undefined;
     const timeout = attemptTimeout(options, timedOut);
     lastTimeout = timeout;
-    made = attempt + 1;
+    made += 1;
     const started = Date.now();
-    const event = { method: config.method, endpoint, attempt: attempt + 1, timeout_ms: timeout };
+    const event = { method: config.method, endpoint, attempt: made, timeout_ms: timeout };
     notifyApi(ctx, { ...event, phase: "started" });
     try {
-      const response = await axios.request({ ...config, timeout });
+      const response = await axios.request({ ...config, timeout, headers: { ...config.headers, Authorization: `Bearer ${accessToken}` } });
       notifyApi(ctx, { ...event, phase: "completed", http_status: response.status, duration_ms: Date.now() - started });
       return response;
     } catch (error) {
+      ctx.signal?.throwIfAborted();
       lastError = error;
       if (isTimeoutError(error)) timedOut += 1;
       notifyApi(ctx, { ...event, phase: "failed", http_status: Number(error?.response?.status || error?.status) || null,
         error_code: cleanText(error?.code) || null, duration_ms: Date.now() - started,
         message: wrapError(error, undefined, { message: transportMessage(error, timeout) }).message });
-      if (attempt >= attempts - 1 || timedOut >= MAX_TIMEOUT_ATTEMPTS || !isRetryableError(error, idempotent)) break;
-      const delay = retryDelayMs(error, attempt);
+      // A 401 response rejected the request before applying it, including a create with a JSON body.
+      if (error?.response?.status === 401 && replayable && ctx.tokenForRequest && !refreshedAfterRejection) {
+        rejectedAccessToken = accessToken;
+        refreshedAfterRejection = true;
+        notifyApi(ctx, { ...event, phase: "retry", retry_delay_ms: 0 });
+        continue;
+      }
+      if (retries >= maxRetries || timedOut >= MAX_TIMEOUT_ATTEMPTS || !isRetryableError(error, idempotent)) break;
+      const delay = retryDelayMs(error, retries);
+      retries += 1;
       notifyApi(ctx, { ...event, phase: "retry", retry_delay_ms: delay });
-      await sleep(delay);
+      await waitForRetry(delay, undefined, { signal: ctx.signal });
     }
   }
 
@@ -648,7 +663,7 @@ async function request(ctx, method, path, options = {}) {
   throw tagNetwork(failure, ctx);
 }
 
-// Lets the controller mark the right network as needing re-authorization on a Google 401.
+// Keep the target network available to callers and delivery logs.
 function tagNetwork(error, ctx) {
   if (error && ctx?.network?.id && !error.networkId) error.networkId = ctx.network.id;
   return error;
@@ -977,6 +992,8 @@ async function uploadReferenceStream(networkIdOrContext, assetId, options = {}) 
   const location = cleanText(headers.location || headers.Location);
   if (!location) throw badRequest("Google did not return a resumable upload session URL");
 
+  // The access token can expire while the resumable session is being opened.
+  const accessToken = ctx.tokenForRequest ? await ctx.tokenForRequest() : ctx.accessToken;
   let upload;
   const uploadStarted = Date.now();
   const uploadEvent = { method: "PUT", endpoint: "/references/upload", attempt: 1 };
@@ -988,7 +1005,7 @@ async function uploadReferenceStream(networkIdOrContext, assetId, options = {}) 
       url: location,
       data: stream,
       headers: {
-        Authorization: `Bearer ${ctx.accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": mime,
         "Content-Length": String(contentLength)
       },

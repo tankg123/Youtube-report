@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, ChevronLeft, ChevronRight, Eye, RefreshCw, ShieldAlert, ShieldCheck, Undo2, Unlock } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, ChevronLeft, ChevronRight, Eye, RefreshCw, ShieldAlert, ShieldCheck, Undo2, Unlock, Upload } from "lucide-react";
 import { useI18n } from "../../context/I18nContext";
 import { tk } from "../../i18n/index.js";
 import { Button, IconButton } from "../assetDelivery/shared";
@@ -69,7 +69,17 @@ function HeaderCell({ column, sort, onSort }) {
   );
 }
 
-function ClaimRow({ claim, grouped, selected, busy, rechecking, activating, onToggle, onOpenDetail, onRelease, onRecheck, onReinstate, onConfirm }) {
+function ThirdPartyUploadsButton({ video, onOpen, disabled }) {
+  const { t } = useI18n();
+  if (!video.video_id || !onOpen) return null;
+  return (
+    <Button size="sm" variant="secondary" icon={Upload} disabled={disabled} onClick={() => onOpen(video)}>
+      {t("Third-party uploads")}
+    </Button>
+  );
+}
+
+function ClaimRow({ claim, grouped, selected, busy, rechecking, activating, onToggle, onOpenDetail, onOpenThirdPartyUploads, onRelease, onRecheck, onReinstate, onConfirm }) {
   const { t, tm } = useI18n();
   const releasable = isReleasable(claim);
   const reason = releaseBlockReason(claim);
@@ -112,10 +122,13 @@ function ClaimRow({ claim, grouped, selected, busy, rechecking, activating, onTo
       {!grouped && (
         <td className="px-3 py-3">
           <VideoSummary claim={claim} />
+          <div className="mt-2">
+            <ThirdPartyUploadsButton video={claim} onOpen={onOpenThirdPartyUploads} disabled={busy} />
+          </div>
         </td>
       )}
       <td className="px-3 py-3">
-        <MonoId value={claim.claim_id} onClick={() => onOpenDetail(claim)} title={t("Open claim details")} />
+        <MonoId value={claim.claim_id} onClick={onOpenDetail && (() => onOpenDetail(claim))} title={onOpenDetail && t("Open claim details")} />
         {(claim.third_party || claim.is_partner_uploaded) && (
           <span className="mt-1 flex flex-wrap gap-1">
             {claim.third_party && <ToneBadge tone="amber">{t("3rd party")}</ToneBadge>}
@@ -158,9 +171,9 @@ function ClaimRow({ claim, grouped, selected, busy, rechecking, activating, onTo
       <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-500">{formatDateTime(claim.time_status_last_modified) || "-"}</td>
       <td className="px-3 py-3">
         <div className="flex justify-end gap-1.5">
-          <Button size="sm" variant="secondary" icon={Eye} onClick={() => onOpenDetail(claim)}>
+          {onOpenDetail && <Button size="sm" variant="secondary" icon={Eye} onClick={() => onOpenDetail(claim)}>
             {t("Details")}
-          </Button>
+          </Button>}
           {needsRecheck ? (
             <Button size="sm" variant="secondary" icon={RefreshCw} loading={rechecking} disabled={busy} title={t("Ask Google for the current status")} onClick={() => onRecheck?.(claim)}>
               {t("Re-check")}
@@ -193,7 +206,7 @@ function ClaimRow({ claim, grouped, selected, busy, rechecking, activating, onTo
   );
 }
 
-function GroupHeaderRow({ group, columnCount, selection, busy, onToggleKeys }) {
+function GroupHeaderRow({ group, columnCount, selection, busy, onToggleKeys, onOpenThirdPartyUploads }) {
   const { t, tm } = useI18n();
   // The rows the two bulk buttons can take (Release: active / pending / potential; Activate: potential / inactive).
   const selectableKeys = group.claims.filter(isSelectable).map((claim) => claimKey(claim));
@@ -215,6 +228,7 @@ function GroupHeaderRow({ group, columnCount, selection, busy, onToggleKeys }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <VideoSummary group={group} size="md" />
           <div className="flex flex-wrap items-center gap-2">
+            <ThirdPartyUploadsButton video={group} onOpen={onOpenThirdPartyUploads} disabled={busy} />
             {group.claim_count ? (
               <ToneBadge tone="emerald" icon={ShieldCheck}>
                 {group.claim_count === 1 ? t("{count} claim", { count: group.claim_count }) : t("{count} claims", { count: group.claim_count })}
@@ -281,6 +295,7 @@ export default function ClaimsTable({
   busy = false,
   dimmed = false,
   onOpenDetail,
+  onOpenThirdPartyUploads,
   onRelease,
   onRecheck,
   onReinstate,
@@ -309,7 +324,7 @@ export default function ClaimsTable({
             {grouped
               ? (groups || []).map((group) => (
                   <Fragment key={group.video_id || "unknown-video"}>
-                    <GroupHeaderRow group={group} columnCount={columns.length} selection={selection} busy={busy} onToggleKeys={onToggleKeys} />
+                    <GroupHeaderRow group={group} columnCount={columns.length} selection={selection} busy={busy} onToggleKeys={onToggleKeys} onOpenThirdPartyUploads={onOpenThirdPartyUploads} />
                     {group.claims.map((claim) => (
                       <ClaimRow
                         key={claimKey(claim)}
@@ -340,6 +355,7 @@ export default function ClaimsTable({
                     activating={isActivating(claim)}
                     onToggle={onToggleRow}
                     onOpenDetail={onOpenDetail}
+                    onOpenThirdPartyUploads={onOpenThirdPartyUploads}
                     onRelease={onRelease}
                     onRecheck={onRecheck}
                     onReinstate={onReinstate}

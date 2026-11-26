@@ -22,6 +22,7 @@ router.get("/youtube/quota", allowRoles(...REPORT_ROLES), reportController.getYo
 
 router.get("/networks", allowRoles(...NETWORK_READ_ROLES), reportController.getNetworks);
 router.get("/networks/:id/cms-auth-url", allowRoles("admin"), reportController.getNetworkCmsAuthUrl);
+router.post("/networks/:id/cms-auth/retry", allowRoles("admin"), reportController.retryNetworkCmsGrant);
 router.post("/networks/:id/cms-auth/disconnect", allowRoles("admin"), reportController.disconnectNetworkCmsAuth);
 router.post("/networks", allowRoles(...REPORT_ROLES), reportController.createNetwork);
 router.put("/networks/:id", allowRoles(...REPORT_ROLES), reportController.updateNetwork);

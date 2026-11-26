@@ -1,3 +1,4 @@
+import { useSystemSettings } from "../context/SystemSettingsContext";
 ﻿import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpDown,
@@ -49,6 +50,8 @@ function currentMonth() {
 }
 
 export default function ChannelPage() {
+  const { isSidebarVisible } = useSystemSettings();
+  const showDetail = isSidebarVisible("/channels#detail");
   const { user, isAdmin, isManager } = useAuth();
   const { t, tm, formatDate } = useI18n();
 
@@ -114,6 +117,7 @@ export default function ChannelPage() {
   }
 
   async function openChannelDetail(channel, selectedMonth = detailMonth) {
+    if (!showDetail) return;
     try {
       setDetailOpen(true);
       setDetailLoading(true);
@@ -524,7 +528,7 @@ export default function ChannelPage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => openChannelDetail(channel)}
+                                disabled={!showDetail} onClick={() => openChannelDetail(channel)}
                                 className="text-left font-black text-slate-900 hover:text-blue-600 truncate max-w-[260px]"
                               >
                                 {channel.title || t("Channel error / die")}
@@ -563,14 +567,14 @@ export default function ChannelPage() {
                       <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{formatDate(channel.updated_at) || "-"}</td>
                       <td className="px-5 py-4">
                         <div className="flex justify-end gap-2">
-                          <button
+                          {showDetail && <button
                             type="button"
                             onClick={() => openChannelDetail(channel)}
                             className="w-10 h-10 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 inline-flex items-center justify-center"
                             title={t("Detail")}
                           >
                             <Pencil size={16} />
-                          </button>
+                          </button>}
                           {canRefreshChannel ? (
                             <button
                               type="button"
@@ -609,7 +613,7 @@ export default function ChannelPage() {
         </div>
       )}
 
-      {detailOpen && (
+      {showDetail && detailOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-7xl max-h-[94vh] overflow-y-auto bg-[#f3f6fb] rounded-3xl shadow-2xl">
             <div className="bg-white border-b border-slate-200 px-5 py-4 sticky top-0 z-10">

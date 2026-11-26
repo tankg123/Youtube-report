@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { PackageSearch, RefreshCw, Trash2 } from "lucide-react";
 import api from "../api/api";
 import { useI18n } from "../context/I18nContext";
+import { useSystemSettings } from "../context/SystemSettingsContext";
 
 export default function ContentIdProductsPage() {
   const { t, tm, tk } = useI18n();
+  const { isSidebarVisible } = useSystemSettings();
+  const showDetail = isSidebarVisible("/content-id/products#detail");
   const [products, setProducts] = useState([]);
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState("");
@@ -53,7 +56,7 @@ export default function ContentIdProductsPage() {
         {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{tm(message)}</div>}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1fr_480px]">
+      <section className={showDetail ? "grid gap-5 xl:grid-cols-[1fr_480px]" : "grid gap-5"}>
         <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 p-4">
             <h2 className="text-lg font-black text-slate-950">{t("Products")} <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">{products.length}</span></h2>
@@ -75,7 +78,7 @@ export default function ContentIdProductsPage() {
                 {products.map((product) => (
                   <tr key={product.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-3">
-                      <button onClick={() => loadProduct(product.id)} className="text-left">
+                      <button disabled={!showDetail} onClick={() => loadProduct(product.id)} className="text-left">
                         <p className="font-black text-slate-950">{product.album_title}</p>
                         <p className="text-xs text-slate-500">{product.album_artist || "-"}</p>
                       </button>
@@ -102,7 +105,7 @@ export default function ContentIdProductsPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        {showDetail && <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-black text-slate-950">{t("Product detail")}</h2>
           {!selected ? (
             <p className="mt-8 text-sm text-slate-500">{t("Select a product to view tracks.")}</p>
@@ -128,7 +131,7 @@ export default function ContentIdProductsPage() {
               </div>
             </div>
           )}
-        </div>
+        </div>}
       </section>
     </div>
   );

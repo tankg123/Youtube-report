@@ -41,6 +41,13 @@ export async function searchClaims(payload, { signal } = {}) {
   return response.data;
 }
 
+export async function getThirdPartyUploads(videoId, networkIds, { signal } = {}) {
+  const response = await api.post(`/content-id/claims/videos/${encodeURIComponent(videoId)}/third-party-uploads`, {
+    network_ids: networkIds
+  }, { signal, timeout: TIMEOUTS.search });
+  return response.data;
+}
+
 export async function getClaimDetail(networkId, claimId, { signal } = {}) {
   const response = await api.get(`/content-id/claims/${encodeURIComponent(networkId)}/${encodeURIComponent(claimId)}`, {
     signal,

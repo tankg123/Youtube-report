@@ -81,7 +81,6 @@ function isExplicitEmptyList(body, key) {
 }
 
 function fail(res, error, extra = {}) {
-  store.noteCmsAuthFailure(error);
   return res.status(errorStatus(error)).json({ success: false, message: errorMessage(error), ...extra });
 }
 
@@ -708,7 +707,7 @@ async function runTrackDelivery(ctx, product, track) {
   try {
     plan = store.buildTrackPlan(product, track, ctx.contentOwnerId);
   } catch (error) {
-    store.markTrackError(track.id, "metadata", error, product.network_id);
+    store.markTrackError(track.id, "metadata", error);
     return { ...base, step: "metadata", error_message: errorMessage(error) };
   }
 
@@ -734,7 +733,7 @@ async function runTrackDelivery(ctx, product, track) {
       error_message: result.error ? errorMessage(result.error) : ""
     };
   } catch (error) {
-    store.markTrackError(track.id, "insert", error, product.network_id);
+    store.markTrackError(track.id, "insert", error);
     return { ...base, step: "insert", error_message: errorMessage(error) };
   }
 }
@@ -1353,7 +1352,7 @@ async function referenceFromClaim(req, res) {
     if (product.delete_reference_after_delivery) await jobs.cleanupDeliveredAudio(parseProductRow(product), id, requestLogger(req, product.id, runId, id));
     res.json({ success: true, track: getTrackParsed(id), reference: normalized });
   } catch (error) {
-    store.markReferenceError(id, error, product.network_id);
+    store.markReferenceError(id, error);
     recomputeProduct(product.id);
     logEvent(req, product.id, { track_id: id, action: "reference_from_claim", status: "error", message: errorMessage(error), payload: { run_id: runId } });
     fail(res, error, { track: getTrackParsed(id) });
@@ -1475,7 +1474,6 @@ async function syncProduct(req, res) {
       try {
         await syncTrackWithCms(observed(req, ctx, id, { trackId: track.id, step: "sync", runId }), track);
       } catch (error) {
-        store.noteCmsAuthFailure(error, row.network_id);
         errors.push({ track_id: track.id, message: errorMessage(error) });
       }
     });
@@ -1557,7 +1555,6 @@ async function updateProduct(req, res) {
               .run(JSON.stringify(metadata), track.id);
             patched += 1;
           } catch (error) {
-            store.noteCmsAuthFailure(error, row.network_id);
             errors.push({ track_id: track.id, message: errorMessage(error) });
           }
         });
@@ -1765,7 +1762,6 @@ async function updateRights(req, res) {
           }
           updated += 1;
         } catch (error) {
-          store.noteCmsAuthFailure(error, row.network_id);
           errors.push({ track_id: track.id, message: errorMessage(error) });
         }
       });
@@ -1812,7 +1808,6 @@ async function runTakedown(ctx, track, { releaseClaims }) {
   try {
     references = toArray(await service.listReferences(ctx, track.asset_id)).filter(isObject);
   } catch (error) {
-    store.noteCmsAuthFailure(error);
     referenceFailures += 1;
     result.errors.push({ scope: "references", message: `Could not list references: ${errorMessage(error)}` });
   }
@@ -1825,7 +1820,6 @@ async function runTakedown(ctx, track, { releaseClaims }) {
         await service.patchReferenceStatus(ctx, referenceId, "inactive", { releaseClaims });
         result.references_deactivated += 1;
       } catch (error) {
-        store.noteCmsAuthFailure(error);
         referenceFailures += 1;
         result.errors.push({ scope: "reference", reference_id: referenceId, message: `Reference ${referenceId}: ${errorMessage(error)}` });
       }
@@ -1837,7 +1831,6 @@ async function runTakedown(ctx, track, { releaseClaims }) {
     try {
       claims = await service.searchClaimsByAsset(ctx, track.asset_id);
     } catch (error) {
-      store.noteCmsAuthFailure(error);
       result.errors.push({ scope: "claims", message: `Could not list claims: ${errorMessage(error)}` });
     }
     for (const claim of claims) {
@@ -1846,7 +1839,6 @@ async function runTakedown(ctx, track, { releaseClaims }) {
         await service.releaseClaim(ctx, claim.claim_id);
         result.claims_released += 1;
       } catch (error) {
-        store.noteCmsAuthFailure(error);
         result.errors.push({ scope: "claim", claim_id: claim.claim_id, message: `Claim ${claim.claim_id}: ${errorMessage(error)}` });
       }
     }
@@ -1912,7 +1904,6 @@ async function runReactivate(ctx, track) {
       WHERE id = ?
     `).run(anyLive ? "completed" : "created", cleanText(newest?.id) || null, referenceStatus || null, track.id);
   } catch (error) {
-    store.noteCmsAuthFailure(error);
     result.error = errorMessage(error);
     db.prepare("UPDATE content_id_delivery_tracks SET step = 'reactivate', error_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
       .run(result.error, track.id);

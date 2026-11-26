@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, Eye, EyeOff, FileAudio, FileSignature, FileSpreadsheet, FileVideo, Home, Landmark, LockKeyhole, LogOut, Mail, Menu, Moon, Network, PackageSearch, Percent, ReceiptText, Save, Settings, ShieldCheck, Sun, Tags, UserRound, Users, UsersRound, Video, X } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Clapperboard, CloudUpload, Disc3, Eye, EyeOff, FileAudio, FileSignature, FileSpreadsheet, FileVideo, Home, Landmark, LockKeyhole, LogOut, Mail, Menu, Moon, Network, PackageSearch, Percent, ReceiptText, Save, Settings, ShieldCheck, Sun, Tags, UserRound, Users, UsersRound, Video, X } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
 import { tk } from "../i18n/index.js";
+import BrandLogoImage from "./BrandLogoImage";
+import { ANALYTICS_SECTIONS } from "../pages/analytics/analyticsUtils";
 
 const avatarColors = ["#2563eb", "#059669", "#7c3aed", "#dc2626", "#d97706", "#0891b2", "#be185d"];
 
@@ -45,10 +47,11 @@ function PasswordInput({ label, value, onChange, shown, onToggle }) {
 
 export default function Topbar() {
   const location = useLocation();
+  const { canViewAnalytics, canViewPartnerDashboard, isAdmin, isReportManager } = useAuth();
   const { user, logout, updateSavedUser, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
   const { language, setLanguage, t, tm } = useI18n();
   const { theme, setTheme } = useTheme();
-  const { settings } = useSystemSettings();
+  const { settings, logoColor, isSidebarVisible, sidebar, loading, refreshSettings } = useSystemSettings();
   const [open, setOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -65,7 +68,7 @@ export default function Topbar() {
   const useUploadedLogo = settings?.logo_mode === "upload" && settings?.logo_data_url;
   const brandName = settings?.brand_name || "ANS Network";
   const subtitle = settings?.brand_subtitle || "MCN Manager System";
-  const hasAnyAppAccess = canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
+  const hasAnyAppAccess = canViewAnalytics || canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
   const mobileSections = [
     {
       title: t("Main"),
@@ -85,6 +88,7 @@ export default function Topbar() {
       title: t("report"),
       show: canViewReports || canViewPartnerGroups,
       items: [
+        ...(canViewPartnerDashboard ? [{ name: t("Partner Dashboard"), path: "/partner-dashboard", icon: BarChart3 }] : []),
         ...(canViewReports ? [
           { name: t("Dashboard"), path: "/report-dashboard", icon: BarChart3 },
           { name: t("report"), path: "/reports", icon: FileSpreadsheet },
@@ -97,13 +101,23 @@ export default function Topbar() {
       ]
     },
     {
+      title: t("Analytic"),
+      show: canViewAnalytics,
+      items: ANALYTICS_SECTIONS.filter((section) => !section.monetary || isAdmin || isReportManager)
+        .map((section) => ({ name: t(section.label), path: `/analytic/${section.path}`, icon: section.icon }))
+    },
+    {
       title: t("Content ID"),
       show: canViewContentId,
       items: [
         { name: t("Creator CSV"), path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
+        { name: t("CMS Delivery"), path: "/content-id/delivery", icon: CloudUpload, show: canViewContentIdFull },
+        { name: t("Video Delivery"), path: "/content-id/video-delivery", icon: Clapperboard, show: canViewContentIdFull },
         { name: t("Web Asset Reference"), path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
         { name: t("Product Manager"), path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
         { name: t("Claim Manager"), path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+        { name: t("Check"), path: "/content-id/check", icon: PackageSearch, show: canViewContentIdFull },
+        { name: t("Ownership email"), path: "/content-id/ownership-email", icon: Mail, show: canViewContentIdFull },
         { name: t("Whitelist"), path: "/content-id/whitelists", icon: ShieldCheck, show: canViewContentIdFull },
         { name: t("Label"), path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
         { name: t("Artist"), path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
@@ -144,11 +158,14 @@ export default function Topbar() {
       show: canViewSettings || canViewContentIdSettings,
       items: [
         ...(canViewSettings ? [{ name: t("systemSettings"), path: "/settings/system", icon: Settings }] : []),
+        ...(canViewSettings ? [{ name: t("Sidebar visibility"), path: "/settings/sidebar", icon: Settings }] : []),
         ...(canViewSettings ? [{ name: t("network"), path: "/networks", icon: Network }] : []),
         ...(canViewContentIdSettings ? [{ name: t("Content ID Setting"), path: "/settings/content-id", icon: Disc3 }] : [])
       ]
     }
-  ].filter((section) => section.show && section.items.length);
+  ].filter((section) => section.show)
+    .map((section) => ({ ...section, items: section.items.filter((item) => isSidebarVisible(item.path)) }))
+    .filter((section) => section.items.length);
   const [form, setForm] = useState({
     full_name: user?.full_name || "",
     email: user?.email || ""
@@ -273,8 +290,11 @@ export default function Topbar() {
     <>
       <header className="app-topbar sticky top-0 z-40 h-14 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-5 flex items-center justify-between">
         <div className="lg:hidden flex min-w-0 items-center gap-3">
-          <div className="w-9 h-9 shrink-0 rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden">
-            <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className={useUploadedLogo ? "h-full w-full object-cover" : "w-6 h-6 object-contain"} />
+          <div
+            className="w-9 h-9 shrink-0 rounded-full border border-slate-200 flex items-center justify-center overflow-hidden"
+            style={{ backgroundColor: useUploadedLogo ? "transparent" : logoColor }}
+          >
+            <BrandLogoImage src={useUploadedLogo ? settings.logo_data_url : undefined} alt={brandName} className={useUploadedLogo ? "h-full w-full object-cover" : "w-6 h-6 object-contain"} />
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-black text-slate-950">{brandName}</p>
@@ -377,13 +397,19 @@ export default function Topbar() {
           {mobileMenuOpen && (
             <div className="absolute right-0 top-12 z-50 max-h-[calc(100vh-76px)] w-[calc(100vw-1.5rem)] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
               <div className="mb-3 flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
-                <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className="h-9 w-9 rounded-full object-cover" />
+                <div
+                  className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center overflow-hidden"
+                  style={{ backgroundColor: useUploadedLogo ? "transparent" : logoColor }}
+                >
+                  <BrandLogoImage src={useUploadedLogo ? settings.logo_data_url : undefined} alt={brandName} className="h-full w-full object-cover" />
+                </div>
                 <div className="min-w-0">
                   <p className="truncate font-black text-slate-950">{brandName}</p>
                   <p className="truncate text-xs font-bold text-slate-500">{subtitle}</p>
                 </div>
               </div>
               <div className="space-y-3">
+                {!loading && !sidebar && <button type="button" onClick={refreshSettings} className="px-3 py-2 text-sm font-semibold">{t("Reload menu")}</button>}
                 {mobileSections.map((section) => (
                   <div key={section.title}>
                     <p className="mb-2 px-2 text-[11px] font-black uppercase tracking-wider text-slate-400">{section.title}</p>

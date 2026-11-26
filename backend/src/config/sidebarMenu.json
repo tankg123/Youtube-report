@@ -1,0 +1,108 @@
+[
+  { "id": "/home", "label": "Home" },
+  { "id": "analytics", "label": "Analytic", "children": [
+    { "id": "/analytic/overview", "label": "Overview" },
+    { "id": "/analytic/channels", "label": "Channels", "children": [
+      { "id": "/analytic/channels#detail", "label": "Channel details" }
+    ] },
+    { "id": "/analytic/content", "label": "Content" },
+    { "id": "/analytic/audience", "label": "Audience" },
+    { "id": "/analytic/revenue", "label": "Revenue" },
+    { "id": "/analytic/explorer", "label": "Explorer" },
+    { "id": "/analytic/sync", "label": "Data & sync", "children": [
+      { "id": "/analytic/sync#schedule", "label": "Daily schedule" },
+      { "id": "/analytic/sync#jobs", "label": "Sync jobs" },
+      { "id": "/analytic/sync#bulk", "label": "Bulk archive" }
+    ] }
+  ] },
+  { "id": "channel-management", "label": "Channel Management", "children": [
+    { "id": "/channel-management", "label": "Overview" },
+    { "id": "/channel-management/collaborators", "label": "Collaborators" },
+    { "id": "/channel-management/sharing", "label": "Sharing" }
+  ] },
+  { "id": "reports", "label": "report", "children": [
+    { "id": "/partner-dashboard", "label": "Partner Dashboard" },
+    { "id": "/report-dashboard", "label": "Dashboard" },
+    { "id": "/reports", "label": "report" },
+    { "id": "/export-multi", "label": "Export Multi" },
+    { "id": "/channels", "label": "Channel", "children": [
+      { "id": "/channels#detail", "label": "Channel details" }
+    ] },
+    { "id": "/exchange-rates", "label": "exchangeRates" },
+    { "id": "/companies", "label": "company" },
+    { "id": "/groups", "label": "group", "children": [
+      { "id": "/groups#detail", "label": "Group details" }
+    ] }
+  ] },
+  { "id": "content-id", "label": "Content ID", "children": [
+    { "id": "/content-id/creator", "label": "Creator Soundrecording & Art" },
+    { "id": "/content-id/delivery", "label": "CMS Delivery", "children": [
+      { "id": "/content-id/delivery#list", "label": "Products" },
+      { "id": "/content-id/delivery#new", "label": "New product" },
+      { "id": "/content-id/delivery#detail", "label": "Product detail", "children": [
+        { "id": "/content-id/delivery#detail/metadata", "label": "Metadata" },
+        { "id": "/content-id/delivery#detail/ownership", "label": "Ownership" },
+        { "id": "/content-id/delivery#detail/response", "label": "Last response" },
+        { "id": "/content-id/delivery#detail/cms", "label": "CMS snapshot" }
+      ] }
+    ] },
+    { "id": "/content-id/video-delivery", "label": "Video Delivery", "children": [
+      { "id": "/content-id/video-delivery#list", "label": "Video batches" },
+      { "id": "/content-id/video-delivery#new", "label": "New video batch" },
+      { "id": "/content-id/video-delivery#detail", "label": "Batch details", "children": [
+        { "id": "/content-id/video-delivery#detail/metadata", "label": "Metadata" },
+        { "id": "/content-id/video-delivery#detail/ownership", "label": "Ownership" },
+        { "id": "/content-id/video-delivery#detail/response", "label": "Last response" },
+        { "id": "/content-id/video-delivery#detail/cms", "label": "CMS snapshot" }
+      ] }
+    ] },
+    { "id": "/content-id/web-assets", "label": "Web Asset Reference" },
+    { "id": "/content-id/products", "label": "Product Manager", "children": [
+      { "id": "/content-id/products#detail", "label": "Product detail" }
+    ] },
+    { "id": "/content-id/claims", "label": "Claim Manager", "children": [
+      { "id": "/content-id/claims#check", "label": "Check claims", "children": [
+        { "id": "/content-id/claims#check/detail", "label": "Claim details" },
+        { "id": "/content-id/claims#check/uploads", "label": "Third-party uploads" }
+      ] },
+      { "id": "/content-id/claims#history", "label": "Release history" }
+    ] },
+    { "id": "/content-id/check", "label": "Check", "children": [
+      { "id": "/content-id/check#detail", "label": "Asset ownership" }
+    ] },
+    { "id": "/content-id/ownership-email", "label": "Ownership email" },
+    { "id": "/content-id/whitelists", "label": "Whitelist" },
+    { "id": "/content-id/labels", "label": "Label" },
+    { "id": "/content-id/artists", "label": "Artist" }
+  ] },
+  { "id": "expenses", "label": "expense", "children": [
+    { "id": "/expenses/overview", "label": "overview" },
+    { "id": "/expenses/categories", "label": "expenseGroups" },
+    { "id": "/expenses/transactions", "label": "transactions" },
+    { "id": "/expenses/accounts", "label": "accounts" },
+    { "id": "/expenses/revenue", "label": "revenue" }
+  ] },
+  { "id": "partners", "label": "Partner & Contract", "children": [
+    { "id": "/partners/overview", "label": "Overview" },
+    { "id": "/partners/list", "label": "Partner" },
+    { "id": "/partners/contracts", "label": "Contract" }
+  ] },
+  { "id": "email", "label": "Email", "children": [
+    { "id": "/email/notification", "label": "Email Notification" }
+  ] },
+  { "id": "/account", "label": "account" },
+  { "id": "settings", "label": "settings", "children": [
+    { "id": "/settings/system", "label": "systemSettings", "children": [
+      { "id": "/settings/system#general", "label": "General settings", "children": [
+        { "id": "/settings/system#general/branding", "label": "Brand name" },
+        { "id": "/settings/system#general/color", "label": "Primary interface color" },
+        { "id": "/settings/system#general/tax", "label": "US / BR revenue tax" },
+        { "id": "/settings/system#general/website", "label": "Website and export settings" }
+      ] },
+      { "id": "/settings/system#ownership-api", "label": "Ownership API keys" }
+    ] },
+    { "id": "/networks", "label": "network" },
+    { "id": "/settings/content-id", "label": "Content ID Setting" },
+    { "id": "/settings/sidebar", "label": "Sidebar visibility" }
+  ] }
+]

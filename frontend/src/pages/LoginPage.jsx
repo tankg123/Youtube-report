@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { LockKeyhole, Mail, Loader2, ShieldCheck } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
+import { returnPathFromSearch } from "../utils/returnTo";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { saveAuth } = useAuth();
   const { settings } = useSystemSettings();
 
@@ -48,7 +50,7 @@ export default function LoginPage() {
 
       saveAuth(res.data.token, res.data.user);
 
-      navigate("/");
+      navigate(returnPathFromSearch(location.search) || "/");
     } catch (error) {
       if (error.response?.data?.requires_verification) {
         navigate("/verify-email", {

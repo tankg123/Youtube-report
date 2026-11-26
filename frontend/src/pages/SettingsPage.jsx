@@ -4,6 +4,8 @@ import api from "../api/api";
 import { useSystemSettings } from "../context/SystemSettingsContext";
 import { useI18n } from "../context/I18nContext";
 import { ACCENT_PALETTES, DEFAULT_ACCENT_ID, getAccentPalette } from "../theme/accentPalettes";
+import BrandLogoImage from "../components/BrandLogoImage";
+import OwnershipApiSettings from "./OwnershipApiSettings";
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -15,7 +17,13 @@ function fileToDataUrl(file) {
 }
 
 export default function SettingsPage() {
-  const { settings, setSettings } = useSystemSettings();
+  const { settings, setSettings, logoColor, isSidebarVisible } = useSystemSettings();
+  const showGeneral = isSidebarVisible("/settings/system#general");
+  const showBranding = isSidebarVisible("/settings/system#general/branding");
+  const showColor = isSidebarVisible("/settings/system#general/color");
+  const showTax = isSidebarVisible("/settings/system#general/tax");
+  const showWebsite = isSidebarVisible("/settings/system#general/website");
+  const showOwnershipApi = isSidebarVisible("/settings/system#ownership-api");
   const { t, tm, tk } = useI18n();
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
@@ -53,7 +61,7 @@ export default function SettingsPage() {
 
   return (
     <div className="settings-page page-stage p-4 lg:p-8 space-y-6">
-      <section className="surface-3d rounded-3xl bg-white border border-slate-200 overflow-hidden">
+      {showGeneral && (showBranding || showColor || showTax || showWebsite) && <section className="surface-3d rounded-3xl bg-white border border-slate-200 overflow-hidden">
         <div className="surface-3d-header px-6 py-5 border-b border-slate-200 flex items-center gap-3">
           <div className="ui-primary icon-cube w-11 h-11 rounded-2xl text-white flex items-center justify-center">
             <MonitorCog size={22} />
@@ -71,17 +79,17 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-6">
+          {showBranding && <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-6">
             <div className="surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 text-center">
               <div
                 className="mx-auto w-32 h-32 rounded-full flex items-center justify-center overflow-hidden shadow-lg"
-                style={{ backgroundColor: useUploadedLogo ? "transparent" : "#2f8ccf" }}
+                style={{ backgroundColor: useUploadedLogo ? "transparent" : logoColor }}
               >
-                {useUploadedLogo ? (
-                  <img src={form.logo_data_url} alt={t("Brand logo")} className="w-full h-full object-cover" />
-                ) : (
-                  <img src="https://revenue.ansnetwork.vn/images/logo-slideBar.png" alt="ANS" className="w-20 h-20 object-contain" />
-                )}
+                <BrandLogoImage
+                  src={useUploadedLogo ? form.logo_data_url : undefined}
+                  alt={form.brand_name || "ANS Network"}
+                  className={useUploadedLogo ? "w-full h-full object-cover" : "w-20 h-20 object-contain"}
+                />
               </div>
               <p className="mt-4 font-black text-slate-950">{form.brand_name || "ANS Network"}</p>
               <p className="text-sm font-bold text-slate-500">{t("MCN Manager System")}</p>
@@ -129,9 +137,9 @@ export default function SettingsPage() {
                 </div>
               </label>
             </div>
-          </div>
+          </div>}
 
-          <section className="theme-picker surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:p-6">
+          {showColor && <section className="theme-picker surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-start gap-3">
                 <div className="ui-soft flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl">
@@ -197,9 +205,9 @@ export default function SettingsPage() {
                 );
               })}
             </div>
-          </section>
+          </section>}
 
-          <section className="surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:p-6">
+          {showTax && <section className="surface-3d-soft rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:p-6">
             <div className="flex items-start gap-3">
               <div className="ui-soft flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl">
                 <Percent size={21} />
@@ -243,9 +251,9 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
-          </section>
+          </section>}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 border-t border-slate-200 pt-6">
+          {showWebsite && <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 border-t border-slate-200 pt-6">
             <label className="block">
               <span className="text-sm font-black text-slate-700">{t("Website title")}</span>
               <input
@@ -283,7 +291,7 @@ export default function SettingsPage() {
                 {t("Used automatically for Excel and invoice PDF exports.")}
               </span>
             </label>
-          </div>
+          </div>}
 
           <div className="flex justify-end border-t border-slate-200 pt-6">
             <button
@@ -295,7 +303,8 @@ export default function SettingsPage() {
             </button>
           </div>
         </form>
-      </section>
+      </section>}
+      {showOwnershipApi && <OwnershipApiSettings />}
     </div>
   );
 }
