@@ -451,6 +451,15 @@ test("ownership email keeps same-title candidates separate from the channel mana
   assert.ok(!seen.some((url) => url.includes("former") || url.includes("song")));
   const { findChannelContact } = require("../src/services/ownershipDirectory");
   assert.equal(findChannelContact(channelId, "Asset owner"), null);
+  // A cold public scan must read the owner of the same asset the web UI displayed.
+  memoryDb.prepare("DELETE FROM ownership_channel_owners WHERE channel_id=?").run(channelId);
+  await require("../src/services/ownershipEmailService").lookupOwnershipEmail({ networkId: 7, id: channelId, pageToken: "older",
+    scan: { signal: new AbortController().signal, target: "asset owner", contacts: new Map(), assets: new Map() } });
+  const candidate = findChannelContact(channelId, " Asset OWNER ", { includeTitle: true });
+  assert.equal(candidate.email, "rights@example.com");
+  assert.equal(candidate.evidence, "title");
+  assert.equal(candidate.video_id, videoId);
+  assert.equal(findChannelContact(channelId, "Asset owner"), null);
   referenceAvailable = true;
   const verified = await call(controller.checkOwnershipEmail, { query: { network_id: 7, id: videoId } });
   assert.equal(verified.body.videos[0].assets[0].evidence, "reference_video");

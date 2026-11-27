@@ -30,7 +30,7 @@ export default {
   "Ownership API keys": "API key tra cứu ownership",
   "Send the key in the x-api-key header. GET accepts query parameters and POST accepts a JSON body.": "Gửi key trong header x-api-key. Với GET, truyền tham số trên URL. Với POST, gửi nội dung dạng JSON.",
   "Request example": "Ví dụ yêu cầu",
-  "Success returns the verified CMS email. Please check manually returns an empty Email. Token erro indicates a CMS token problem.": "Success trả về email đã xác minh của CMS. Please check manually trả về Email rỗng. Token erro báo lỗi token của CMS.",
+  "Success returns a verified CMS contact. If only the asset title matches, the API returns its CMS email with status Please check manually, evidence title, video_id and asset_ownership_url. Email is empty when no unique contact is available. Token erro indicates a CMS token problem.": "Success trả về liên hệ CMS đã xác minh. Nếu chỉ khớp tiêu đề asset, API trả email của CMS trên asset với status là Please check manually, evidence là title, kèm video_id và asset_ownership_url để đối chiếu. Email để trống khi chưa xác định được một địa chỉ duy nhất. Token erro báo lỗi token CMS.",
   "On a lookup problem, read message for the reason and videos_checked for the number of distinct videos checked. The default time limit is 30 seconds per channel (OWNERSHIP_CHANNEL_TIMEOUT_MS).": "Khi việc tra cứu gặp vấn đề, xem lý do trong message và số video khác nhau đã kiểm tra trong videos_checked. Giới hạn mặc định là 30 giây mỗi kênh (OWNERSHIP_CHANNEL_TIMEOUT_MS).",
   "Key name": "Tên API key",
   "Create API key": "Tạo API key",

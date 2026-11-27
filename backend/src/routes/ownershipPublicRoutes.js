@@ -32,13 +32,17 @@ function lookupFailure(error) {
   return { http: 500, status: "Error", message: "The server could not complete the ownership lookup." };
 }
 
-function success(contact) {
-  return { http: 200, status: "Success", contact };
+function contactResult(contact) {
+  if (!contact?.email) return null;
+  if (contact.evidence !== "title") return { http: 200, status: "Success", contact };
+  return { http: 200, status: MANUAL, contact,
+    message: "The email belongs to the requested CMS on a same-title asset. Its link to the channel video is unconfirmed." };
 }
 
-async function resolveContact(id, name, signal, checked) {
-  let contact = directory.findChannelContact(id, name);
-  if (contact?.email) return success(contact);
+async function resolveContact(id, name, signal, progress) {
+  const readContact = () => directory.findChannelContact(id, name, { includeTitle: true });
+  let contact = readContact();
+  if (contact?.email) return contactResult(contact);
   const networks = listClaimAccounts({ includeAuthErrors: true }).filter((account) => account.has_partner_scope);
   if (!networks.length) return { http: 503, status: "Error", message: "No CMS with YouTube Partner access is available." };
 
@@ -51,8 +55,17 @@ async function resolveContact(id, name, signal, checked) {
       continue;
     }
     const controller = new AbortController();
-    const scan = { target: directory.cmsNameKey(name), signal: AbortSignal.any([signal, controller.signal]),
-      contacts: new Map(), assets: new Map() };
+    const target = directory.cmsNameKey(name);
+    const scan = { target, signal: AbortSignal.any([signal, controller.signal]),
+      contacts: new Map(), assets: new Map(),
+      onVideo(channel, video) {
+        progress.checked.add(video.id);
+        if (video.assets.some((asset) => asset.owners.some((owner) => directory.cmsNameKey(owner.name) === target))) {
+          progress.partial ??= { channel, videos: [] };
+          progress.partial.videos.push(video);
+        }
+      }
+    };
     const seen = new Set();
     let pageToken;
     try {
@@ -60,16 +73,17 @@ async function resolveContact(id, name, signal, checked) {
         signal.throwIfAborted();
         const result = await ownership.lookupOwnershipEmail({ networkId: network.id, id, pageToken, scan });
         signal.throwIfAborted();
+        progress.partial = null; // A completed page has already been saved by the lookup service.
         sawChannel = true;
         sawOwner ||= Boolean(result.channel.manager);
         for (const video of result.videos) {
-          checked.add(video.id);
+          progress.checked.add(video.id);
           sawOwner ||= video.assets.some((asset) => asset.evidence !== "title" && asset.owners.length);
           if (video.warnings?.length) warnings.add("Some video or asset details could not be fully verified.");
         }
         if (result.warnings?.length) warnings.add("Some channel, playlist or claim details could not be fully verified.");
-        contact = directory.findChannelContact(id, name);
-        if (contact?.email) return success(contact);
+        contact = readContact();
+        if (contact?.email) return contactResult(contact);
         pageToken = result.next_page_token;
         if (pageToken && seen.has(pageToken)) {
           warnings.add("YouTube returned a repeated uploads page. The scan is incomplete.");
@@ -79,6 +93,7 @@ async function resolveContact(id, name, signal, checked) {
       } while (pageToken);
     } catch (error) {
       signal.throwIfAborted();
+      progress.partial = null;
       if (error.status !== 404) {
         const issue = lookupFailure(error);
         if (!failure || issue.status === "Token erro") failure = issue;
@@ -106,7 +121,7 @@ async function lookup(req, res) {
   const id = channel.trim();
   const name = cms.trim();
   const ms = channelTimeout();
-  const checked = new Set();
+  const progress = { checked: new Set(), partial: null };
   const controller = new AbortController();
   const disconnect = () => controller.abort();
   res.once("close", disconnect);
@@ -115,11 +130,17 @@ async function lookup(req, res) {
   let result;
   try {
     // A shared OAuth refresh may still be settling for other callers. Bound this response independently.
-    result = await Promise.race([resolveContact(id, name, controller.signal, checked), aborted]);
+    result = await Promise.race([resolveContact(id, name, controller.signal, progress), aborted]);
   } catch (error) {
-    result = controller.signal.aborted
-      ? { http: 504, status: MANUAL, message: `Channel time limit (${ms / 1000}s) reached. The scan is incomplete.` }
-      : lookupFailure(error);
+    if (res.destroyed) return;
+    if (controller.signal.aborted) {
+      // A sibling video can still be waiting on YouTube when the timer fires.
+      if (progress.partial) directory.recordLookup(progress.partial, true);
+      result = contactResult(directory.findChannelContact(id, name, { includeTitle: true }));
+      const timeout = `Channel time limit (${ms / 1000}s) reached. The scan is incomplete.`;
+      if (!result) result = { http: 504, status: MANUAL, message: timeout };
+      else if (result.status === MANUAL) result.message += " " + timeout;
+    } else result = lookupFailure(error);
   } finally {
     clearTimeout(timer);
     res.off("close", disconnect);
@@ -127,7 +148,8 @@ async function lookup(req, res) {
   }
   if (!res.destroyed) res.status(result.http).json({
     "Channel ID": id, "CMS Name": result.contact?.name || name, Email: result.contact?.email || "", status: result.status,
-    ...(result.message ? { message: result.message, videos_checked: checked.size } : {})
+    ...(result.contact?.evidence === "title" ? { evidence: "title", video_id: result.contact.video_id, asset_ownership_url: result.contact.asset_url } : {}),
+    ...(result.message ? { message: result.message, videos_checked: progress.checked.size } : {})
   });
 }
 

@@ -61,13 +61,17 @@ const recordLookup = db.transaction((result, isChannel) => {
   return { owners, channel_owner_count: stored.length };
 });
 
-function findChannelContact(channelId, name) {
-  const rows = db.prepare(`SELECT cms_name, email FROM ownership_channel_owners
-    WHERE channel_id = ? AND cms_name_key = ? AND evidence >= ? ORDER BY evidence DESC, owner_id`).all(channelId, cmsNameKey(name), EVIDENCE.indexOf("reference_video"));
+function findChannelContact(channelId, name, { includeTitle = false } = {}) {
+  const matches = db.prepare(`SELECT cms_name, email, evidence, video_id, asset_url FROM ownership_channel_owners
+    WHERE channel_id = ? AND cms_name_key = ? ORDER BY evidence DESC, owner_id`).all(channelId, cmsNameKey(name));
+  const verified = matches.filter((row) => row.evidence >= EVIDENCE.indexOf("reference_video"));
+  const rows = verified.length || !includeTitle ? verified : matches.filter((row) => row.evidence === EVIDENCE.indexOf("title"));
   if (!rows.length) return null;
   const emails = new Map(rows.filter((row) => row.email).map((row) => [row.email.toLowerCase(), row.email]));
   const sameContact = emails.size === 1 && rows.every((row) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email || ""));
-  return { name: rows[0].cms_name, email: sameContact ? [...emails.values()][0] : null };
+  const first = rows[0];
+  return { name: first.cms_name, email: sameContact ? [...emails.values()][0] : null,
+    evidence: EVIDENCE[first.evidence], video_id: first.video_id, asset_url: first.asset_url };
 }
 
 module.exports = { cmsNameKey, recordLookup, findChannelContact };

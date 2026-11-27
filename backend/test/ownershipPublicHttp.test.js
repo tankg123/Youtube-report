@@ -204,3 +204,44 @@ test("public lookup distinguishes a complete empty scan, CMS token rejection, qu
   assert.match(data.message, /time limit.*incomplete/);
   assert.ok(Date.now() - start < 1400, "the second page must share the first page's deadline");
 });
+
+test("the public API returns the web's same-title asset contact for review, including on a partial-page deadline", async (t) => {
+  const { key } = await (await request(keysPath, { method: "POST", key: process.env.BACKEND_API_KEY, user: 1, body: { name: "title-test" } })).json();
+  const id = "UC" + "t".repeat(22);
+  const name = "Example CMS";
+  const email = "asset-owner@example.org";
+  const input = { channel_id: id, cms_name: " example  cms " };
+  const owner = { owner_id: "example", name, email };
+  const url = "https://studio.youtube.com/asset/123/ownership";
+  const channelInfo = { id, title: "Test channel" };
+  const video = { id: "test-video1", assets: [{ evidence: "title", ownership_url: url, owners: [owner] }] };
+  const save = (videos) => directory.recordLookup({ channel: channelInfo, videos }, true);
+  const lookup = t.mock.method(require("../src/services/ownershipEmailService"), "lookupOwnershipEmail", async ({ scan }) => {
+    scan.onVideo(channelInfo, video);
+    await new Promise((resolve) => scan.signal.addEventListener("abort", resolve, { once: true }));
+    throw scan.signal.reason;
+  });
+  const previous = process.env.OWNERSHIP_CHANNEL_TIMEOUT_MS;
+  process.env.OWNERSHIP_CHANNEL_TIMEOUT_MS = "1000";
+  t.after(() => { if (previous === undefined) delete process.env.OWNERSHIP_CHANNEL_TIMEOUT_MS; else process.env.OWNERSHIP_CHANNEL_TIMEOUT_MS = previous; });
+
+  const post = await request(publicPath, { method: "POST", body: input, key });
+  assert.equal(post.status, 200);
+  const partial = await post.json();
+  assert.deepEqual([partial["CMS Name"], partial.Email, partial.status, partial.evidence, partial.video_id, partial.asset_ownership_url],
+    [name, email, "Please check manually", "title", video.id, url]);
+  assert.match(partial.message, /unconfirmed.*time limit/i);
+  assert.equal(partial.videos_checked, 1);
+  const get = () => request(publicPath + "?" + new URLSearchParams(input), { key });
+  const cached = await (await get()).json();
+  assert.deepEqual([cached.Email, cached.status, cached.videos_checked], [email, "Please check manually", 0]);
+  assert.equal(lookup.mock.callCount(), 1);
+
+  const other = { ...owner, owner_id: "other", email: "other@example.org" };
+  save([{ ...video, assets: [{ ...video.assets[0], owners: [other] }] }]);
+  lookup.mock.mockImplementation(async () => ({ channel: channelInfo, videos: [] }));
+  const ambiguous = await (await get()).json();
+  assert.deepEqual([ambiguous.Email, ambiguous.status], ["", "Please check manually"]);
+  save([{ ...video, assets: [{ ...video.assets[0], evidence: "upload_claim" }] }]);
+  assert.deepEqual(await (await get()).json(), { "Channel ID": id, "CMS Name": name, Email: email, status: "Success" });
+});

@@ -197,19 +197,19 @@ async function lookupOwnershipEmail({ networkId, id, pageToken, scan }) {
           if (scan || !optionalReadDenied(error)) noteFailure(errors, error);
         }
       }
-      // The public API needs a verified link before spending calls on an asset and its owners.
-      if (!scan || evidence !== "title") {
-        try {
-          asset = await assetDetail(assetId);
-        } catch (error) {
-          noteFailure(errors, error);
-        }
+      try {
+        asset = await assetDetail(assetId);
+      } catch (error) {
+        noteFailure(errors, error);
       }
       const url = new URL("https://studio.youtube.com/asset/" + encodeURIComponent(asset.id) + "/ownership");
       url.searchParams.set("o", ctx.contentOwnerId);
       return { ...asset, evidence, ownership_url: url.href };
     });
-    return { id: video.id, title, licensed: video.contentDetails?.licensedContent === true, assets: found, warnings: [...errors] };
+    const inspected = { id: video.id, title, licensed: video.contentDetails?.licensedContent === true, assets: found, warnings: [...errors] };
+    signal?.throwIfAborted();
+    scan?.onVideo?.(channelInfo, inspected);
+    return inspected;
   }
   const result = {
     channel: channelInfo,
