@@ -19,23 +19,23 @@ function lookupFailure(error) {
   if (error.oauthClientMisconfigured || error.tokenRefreshTransient || store.isCmsCredentialError(error)) {
     const reason = ["invalid_grant", "invalid_client", "unauthorized_client", "missing_refresh_token",
       "oauth_client_not_configured", "oauth_client_unverified"].includes(error.reason) ? ` (${error.reason})` : "";
-    return { http: 503, status: "Token erro", message: `The CMS token could not be used or renewed${reason}.` };
+    return { http: 503, message: `The CMS token could not be used or renewed${reason}.` };
   }
   if (error.status === 429 || store.isQuotaReason(error.reason)) {
-    return { http: 429, status: "Error", message: "YouTube rate or quota limit reached." };
+    return { http: 429, message: "YouTube rate or quota limit reached." };
   }
-  if (error.status === 403) return { http: 403, status: "Error", message: "YouTube denied this CMS access to the lookup." };
+  if (error.status === 403) return { http: 403, message: "YouTube denied this CMS access to the lookup." };
   if (error.isAssetDeliveryError || error.timedOut || error.status >= 500) {
-    return { http: 502, status: "Error", message: "YouTube could not complete the ownership lookup." };
+    return { http: 502, message: "YouTube could not complete the ownership lookup." };
   }
   console.error("[ownership-api] lookup failed", error.code || error.name);
-  return { http: 500, status: "Error", message: "The server could not complete the ownership lookup." };
+  return { http: 500, message: "The server could not complete the ownership lookup." };
 }
 
 function contactResult(contact) {
   if (!contact?.email) return null;
-  if (contact.evidence !== "title") return { http: 200, status: "Success", contact };
-  return { http: 200, status: MANUAL, contact,
+  if (contact.evidence !== "title") return { http: 200, contact };
+  return { http: 200, contact,
     message: "The email belongs to the requested CMS on a same-title asset. Its link to the channel video is unconfirmed." };
 }
 
@@ -44,14 +44,14 @@ async function resolveContact(id, name, signal, progress) {
   let contact = readContact();
   if (contact?.email) return contactResult(contact);
   const networks = listClaimAccounts({ includeAuthErrors: true }).filter((account) => account.has_partner_scope);
-  if (!networks.length) return { http: 503, status: "Error", message: "No CMS with YouTube Partner access is available." };
+  if (!networks.length) return { http: 503, message: "No CMS with YouTube Partner access is available." };
 
   let failure, sawChannel = false, sawOwner = false;
   const warnings = new Set();
   for (const network of networks) {
     signal.throwIfAborted();
     if (network.status === "error") {
-      failure = { http: 503, status: "Token erro", message: "A CMS connection has a saved token error." };
+      failure = { http: 503, message: "A CMS connection has a saved token error." };
       continue;
     }
     const controller = new AbortController();
@@ -96,7 +96,7 @@ async function resolveContact(id, name, signal, progress) {
       progress.partial = null;
       if (error.status !== 404) {
         const issue = lookupFailure(error);
-        if (!failure || issue.status === "Token erro") failure = issue;
+        if (!failure || issue.http === 503) failure = issue;
       }
     } finally {
       controller.abort();
@@ -107,7 +107,7 @@ async function resolveContact(id, name, signal, progress) {
   if (!sawChannel) message = "The channel was not visible to the available CMS accounts.";
   else if (contact) message = "The requested CMS was found without an unambiguous contact email.";
   else if (sawOwner) message = "No verified owner matched the requested CMS name.";
-  return { http: 200, status: MANUAL, message: [message, ...warnings].join(" ") };
+  return { http: 200, message: [message, ...warnings].join(" ") };
 }
 
 async function lookup(req, res) {
@@ -116,7 +116,7 @@ async function lookup(req, res) {
   const cms = input["CMS Name"] ?? input.cms_name;
   if (typeof channel !== "string" || !/^UC[\w-]{22}$/.test(channel.trim()) ||
       typeof cms !== "string" || !cms.trim() || cms.trim().length > 200) {
-    return res.status(400).json({ status: "Invalid request", message: "Supply a valid Channel ID and a CMS Name of up to 200 characters." });
+    return res.status(400).json({ status: MANUAL, message: "Supply a valid Channel ID and a CMS Name of up to 200 characters." });
   }
   const id = channel.trim();
   const name = cms.trim();
@@ -138,16 +138,17 @@ async function lookup(req, res) {
       if (progress.partial) directory.recordLookup(progress.partial, true);
       result = contactResult(directory.findChannelContact(id, name, { includeTitle: true }));
       const timeout = `Channel time limit (${ms / 1000}s) reached. The scan is incomplete.`;
-      if (!result) result = { http: 504, status: MANUAL, message: timeout };
-      else if (result.status === MANUAL) result.message += " " + timeout;
+      if (!result) result = { http: 504, message: timeout };
+      else if (result.message) result.message += " " + timeout;
     } else result = lookupFailure(error);
   } finally {
     clearTimeout(timer);
     res.off("close", disconnect);
     controller.abort();
   }
+  const email = result.contact?.email || "";
   if (!res.destroyed) res.status(result.http).json({
-    "Channel ID": id, "CMS Name": result.contact?.name || name, Email: result.contact?.email || "", status: result.status,
+    "Channel ID": id, "CMS Name": result.contact?.name || name, Email: email, status: email ? "Success" : MANUAL,
     ...(result.contact?.evidence === "title" ? { evidence: "title", video_id: result.contact.video_id, asset_ownership_url: result.contact.asset_url } : {}),
     ...(result.message ? { message: result.message, videos_checked: progress.checked.size } : {})
   });
@@ -160,7 +161,7 @@ router.route("/ownership-email")
 
 router.use("/ownership-email", (error, _req, res, next) => {
   if (!["entity.parse.failed", "entity.too.large"].includes(error.type)) return next(error);
-  res.status(error.status).json({ status: "Invalid request", message: error.type === "entity.too.large" ? "Request body too large." : "Invalid JSON body." });
+  res.status(error.status).json({ status: MANUAL, message: error.type === "entity.too.large" ? "Request body too large." : "Invalid JSON body." });
 });
 
 module.exports = router;

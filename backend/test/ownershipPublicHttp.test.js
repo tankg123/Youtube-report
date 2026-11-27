@@ -128,12 +128,16 @@ test("external GET and POST require a scoped key and return only the matching ch
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
   for (const badKey of [null, "wrong", internal.key]) {
-    assert.equal((await request(query, { key: badKey })).status, 401);
+    const denied = await request(query, { key: badKey });
+    assert.equal(denied.status, 401);
+    assert.equal((await denied.json()).status, "Please check manually");
     assert.equal((await request(publicPath, { method: "POST", key: badKey, body: data })).status, 401);
   }
   assert.equal(calls.length, 0);
   assert.equal((await request(keysPath, { key, user: 1 })).status, 401);
-  assert.equal((await request(publicPath, { key, method: "POST", body: { ...data, "Channel ID": "bad" } })).status, 400);
+  const invalid = await request(publicPath, { key, method: "POST", body: { ...data, "Channel ID": "bad" } });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).status, "Please check manually");
   const post = await request(publicPath, { key, method: "POST", body: { ...data, "CMS Name": " other   cms " } });
   assert.equal(post.status, 200);
   assert.deepEqual(await post.json(), { ...data, Email: "rights@example.org", status: "Success" });
@@ -173,16 +177,16 @@ test("public lookup distinguishes a complete empty scan, CMS token rejection, qu
   let data = await res.json();
   assert.deepEqual([res.status, data.status, data.Email, data.videos_checked], [200, "Please check manually", "", 2]);
   assert.match(data.message, /No verified ownership/);
-  for (const [error, http, status] of [
-    [{ cmsAuthFailed: true, reason: "invalid_grant" }, 503, "Token erro"],
-    [{ oauthClientMisconfigured: true, reason: "unauthorized_client" }, 503, "Token erro"],
-    [{ status: 401 }, 503, "Token erro"],
-    [{ status: 403, reason: "quotaExceeded" }, 429, "Error"]
+  for (const [error, http] of [
+    [{ cmsAuthFailed: true, reason: "invalid_grant" }, 503],
+    [{ oauthClientMisconfigured: true, reason: "unauthorized_client" }, 503],
+    [{ status: 401 }, 503],
+    [{ status: 403, reason: "quotaExceeded" }, 429]
   ]) {
     lookup.mock.mockImplementation(async () => { throw Object.assign(new Error("private-token-value"), error); });
     res = await request(query, { key });
     data = await res.json();
-    assert.deepEqual([res.status, data.status, data.Email], [http, status, ""]);
+    assert.deepEqual([res.status, data.status, data.Email], [http, "Please check manually", ""]);
     assert.ok(data.message && !data.message.includes("private-token-value"));
   }
   const old = process.env.OWNERSHIP_CHANNEL_TIMEOUT_MS;
@@ -205,7 +209,7 @@ test("public lookup distinguishes a complete empty scan, CMS token rejection, qu
   assert.ok(Date.now() - start < 1400, "the second page must share the first page's deadline");
 });
 
-test("the public API returns the web's same-title asset contact for review, including on a partial-page deadline", async (t) => {
+test("a unique same-title asset contact succeeds with its evidence, including on a partial-page deadline", async (t) => {
   const { key } = await (await request(keysPath, { method: "POST", key: process.env.BACKEND_API_KEY, user: 1, body: { name: "title-test" } })).json();
   const id = "UC" + "t".repeat(22);
   const name = "Example CMS";
@@ -229,12 +233,12 @@ test("the public API returns the web's same-title asset contact for review, incl
   assert.equal(post.status, 200);
   const partial = await post.json();
   assert.deepEqual([partial["CMS Name"], partial.Email, partial.status, partial.evidence, partial.video_id, partial.asset_ownership_url],
-    [name, email, "Please check manually", "title", video.id, url]);
+    [name, email, "Success", "title", video.id, url]);
   assert.match(partial.message, /unconfirmed.*time limit/i);
   assert.equal(partial.videos_checked, 1);
   const get = () => request(publicPath + "?" + new URLSearchParams(input), { key });
   const cached = await (await get()).json();
-  assert.deepEqual([cached.Email, cached.status, cached.videos_checked], [email, "Please check manually", 0]);
+  assert.deepEqual([cached.Email, cached.status, cached.videos_checked], [email, "Success", 0]);
   assert.equal(lookup.mock.callCount(), 1);
 
   const other = { ...owner, owner_id: "other", email: "other@example.org" };

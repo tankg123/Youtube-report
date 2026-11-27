@@ -61,7 +61,7 @@ export default function OwnershipApiSettings() {
       <code className="block break-all text-sm">{endpoint}</code>
       <details className="text-sm"><summary className="cursor-pointer font-semibold">{t("Request example")}</summary>
         <pre className="my-2 overflow-x-auto rounded-lg bg-slate-50 p-3">{example}</pre>
-        <p>{t("Success returns a verified CMS contact. If only the asset title matches, the API returns its CMS email with status Please check manually, evidence title, video_id and asset_ownership_url. Email is empty when no unique contact is available. Token erro indicates a CMS token problem.")}</p>
+        <p>{t("Success means the API found one valid email for the requested CMS. For a same-title asset, the response includes evidence title, video_id and asset_ownership_url for review. Please check manually means the API could not return a unique valid email or encountered an error. See the response message for details.")}</p>
         <p>{t("On a lookup problem, read message for the reason and videos_checked for the number of distinct videos checked. The default time limit is 30 seconds per channel (OWNERSHIP_CHANNEL_TIMEOUT_MS).")}</p>
       </details>
       <form className="flex flex-wrap items-end gap-2" onSubmit={create}>

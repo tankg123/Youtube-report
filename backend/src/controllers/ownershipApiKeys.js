@@ -30,7 +30,7 @@ function requireOwnershipKey(req, res, next) {
   const key = req.get("x-api-key") || "";
   if (!/^own_[0-9a-f]{64}$/.test(key) ||
       !db.prepare("SELECT 1 FROM ownership_api_keys WHERE key_hash = ? AND revoked_at IS NULL").get(digest(key))) {
-    return res.status(401).json({ status: "Invalid API key", message: "Invalid or missing ownership API key." });
+    return res.status(401).json({ status: "Please check manually", message: "Invalid or missing ownership API key." });
   }
   next();
 }
